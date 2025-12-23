@@ -1,43 +1,55 @@
 import jwt
 import time
 import uuid
-from .key_manager import load_private_key
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
+from .key_manager import load_private_key, load_public_key
 
 ALGORITHM = "RS256"
 
 
-def generate_token(user_id: str, device_id: str, cnf: dict = None):
+def generate_token(user_id: str, device_id: str, client_public_key: str):
     now = int(time.time())
 
     payload = {
         "sub": user_id,
         "device_id": device_id,
         "iat": now,
-        "exp": now + 300,  # 5 minutes
-        "jti": str(uuid.uuid4())
+        "exp": now + 300,
+        "jti": str(uuid.uuid4()),
+        "cnf": {
+            "pk": client_public_key
+        }
     }
 
-    if cnf:
-        payload["cnf"] = cnf  # Proof‑of‑Possession info
-
     private_key = load_private_key()
-    token = jwt.encode(payload, private_key, algorithm=ALGORITHM)
+    return jwt.encode(payload, private_key, algorithm=ALGORITHM)
 
-    return token
-import jwt
-from jwt import ExpiredSignatureError, InvalidTokenError
-from .key_manager import load_public_key
 
-def verify_token(token: str):
+def verify_jwt(token: str):
     try:
         public_key = load_public_key()
-        payload = jwt.decode(
-            token,
-            public_key,
-            algorithms=["RS256"]
+        return jwt.decode(token, public_key, algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+
+
+def verify_pop_signature(message: bytes, signature: bytes, public_key_pem: str):
+    public_key = serialization.load_pem_public_key(
+        public_key_pem.encode()
+    )
+
+    try:
+        public_key.verify(
+            signature,
+            message,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
         )
-        return payload
-    except ExpiredSignatureError:
-        return None
-    except InvalidTokenError:
-        return None
+        return True
+    except Exception:
+        return False
