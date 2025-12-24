@@ -1,13 +1,16 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException
 import base64
 from app.auth_utils import generate_token, verify_jwt, verify_pop_signature
 from app.key_manager import generate_rsa_keys, generate_aes_key
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 
 app = FastAPI(title="Cryptographically Secured Access Token System")
 
 # In‑memory device store
 # { user_id: { device_id: public_key } }
 registered_devices = {}
+security = HTTPBearer()
 
 
 @app.on_event("startup")
@@ -38,17 +41,15 @@ def issue_token(user_id: str, device_id: str):
     return {"access_token": token}
 
 
+
 @app.get("/protected")
 def protected_endpoint(
-    authorization: str = Header(...),
-    x_pop_signature: str = Header(...)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    x_pop_signature: str = Header(..., alias="X-Pop-Signature")
 ):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid token format")
+    token = credentials.credentials  # Extract JWT safely
 
-    token = authorization.split(" ")[1]
     payload = verify_jwt(token)
-
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -60,7 +61,7 @@ def protected_endpoint(
         raise HTTPException(status_code=403, detail="PoP verification failed")
 
     return {
-        "message": "Access granted with Proof‑of‑Possession",
+        "message": "Access granted with Proof-of-Possession",
         "user": payload["sub"],
         "device": payload["device_id"]
     }
