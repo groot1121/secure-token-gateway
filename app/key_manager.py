@@ -46,3 +46,6 @@ def load_private_key():
 def load_public_key():
     with open(PUBLIC_KEY_PATH, "rb") as f:
         return f.read()
+def load_aes_key():
+    with open(AES_KEY_PATH, "rb") as f:
+        return f.read()
