@@ -1,0 +1,11 @@
+
+services:
+  api:
+    build: .
+    container_name: secure-token-gateway
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./keys:/app/keys
+    restart: unless-stopped

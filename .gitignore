@@ -1,7 +1,13 @@
-__pycache__/
-app/__pycache__/
+# Keys & secrets
 keys/
 *.pem
 *.bin
-client/*.pem
+
+# Logs
 logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.env

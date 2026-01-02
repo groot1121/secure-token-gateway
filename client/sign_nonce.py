@@ -2,22 +2,22 @@ import base64
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-# 1. Load client private key
+# Load client private key
 with open("client_private_key.pem", "rb") as f:
     private_key = serialization.load_pem_private_key(
         f.read(),
         password=None
     )
 
-# 2. Nonce received from /challenge (Base64)
-nonce_b64 = "YuCDYpHQCQNENW6cIXjxrw=="
+# Nonce received from /challenge (Base64 string)
+nonce_b64 = "6+NB9nWc1E697jk3srFAIw=="
 
-# 3. Decode nonce
-nonce = base64.b64decode(nonce_b64)
+# Decode Base64 nonce → bytes
+nonce_bytes = base64.b64decode(nonce_b64)
 
-# 4. Sign the nonce
+# Sign the nonce bytes
 signature = private_key.sign(
-    nonce,
+    nonce_bytes,
     padding.PSS(
         mgf=padding.MGF1(hashes.SHA256()),
         salt_length=padding.PSS.MAX_LENGTH
@@ -25,7 +25,7 @@ signature = private_key.sign(
     hashes.SHA256()
 )
 
-# 5. Convert signature to Base64 (to send to server)
+# Encode signature to Base64 for transport
 signature_b64 = base64.b64encode(signature).decode()
 
 print("Signed Nonce (Base64):")
