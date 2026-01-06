@@ -1,13 +1,15 @@
-# Keys & secrets
-keys/
-*.pem
-*.bin
-
-# Logs
-logs/
-*.log
+# Node
+node_modules/
+frontend/**/node_modules/
 
 # Python
 __pycache__/
 *.pyc
 .env
+
+# Keys (never commit secrets)
+keys/*.pem
+keys/*.bin
+
+# Logs
+logs/
