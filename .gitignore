@@ -7,9 +7,12 @@ __pycache__/
 *.pyc
 .env
 
-# Keys (never commit secrets)
-keys/*.pem
-keys/*.bin
-
 # Logs
 logs/
+# Client keys
+client_private_key.pem
+client_public_key.pem
+
+# Any generated keys
+keys/*.pem
+keys/*.bin
