@@ -10,7 +10,7 @@ with open("client_private_key.pem", "rb") as f:
     )
 
 # Nonce received from /challenge (Base64 string)
-nonce_b64 = "cVp/wqbLvlf9HDoHbIIzpA=="
+nonce_b64 = "BIICQMCOb6PE/d9tBSw8Hg=="
 
 # Decode Base64 nonce → bytes
 nonce_bytes = base64.b64decode(nonce_b64)

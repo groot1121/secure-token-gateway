@@ -60,6 +60,8 @@ def issue_token(user_id: str, device_id: str):
 
 # ---------------- PROTECTED ENDPOINT ----------------
 
+from cryptography.exceptions import InvalidSignature
+
 @app.get("/protected")
 def protected(
     creds: HTTPAuthorizationCredentials = Depends(security),
@@ -73,14 +75,42 @@ def protected(
     if jti in revoked_tokens:
         raise HTTPException(status_code=401, detail="Token revoked")
 
-    message = b"GET:/protected"
-    signature = base64.b64decode(x_pop_signature)
-    public_key = payload["cnf"]["pk"]
+    try:
+        message = b"GET:/protected"
+        signature = base64.b64decode(x_pop_signature)
+        public_key = payload["cnf"]["pk"]
 
-    if not verify_pop_signature(message, signature, public_key):
+        if not verify_pop_signature(message, signature, public_key):
+            raise HTTPException(status_code=403, detail="Invalid PoP signature")
+
+    except Exception:
         raise HTTPException(status_code=403, detail="Invalid PoP signature")
 
     return {"message": "Access granted"}
+
+
+
+# @app.get("/protected")
+# def protected(
+#     creds: HTTPAuthorizationCredentials = Depends(security),
+#     x_pop_signature: str = Header(..., alias="X-Pop-Signature"),
+# ):
+#     payload = verify_jwt(creds.credentials)
+#     if not payload:
+#         raise HTTPException(status_code=401, detail="Invalid token")
+
+#     jti = payload["jti"]
+#     if jti in revoked_tokens:
+#         raise HTTPException(status_code=401, detail="Token revoked")
+
+#     message = b"GET:/protected"
+#     signature = base64.b64decode(x_pop_signature)
+#     public_key = payload["cnf"]["pk"]
+
+#     if not verify_pop_signature(message, signature, public_key):
+#         raise HTTPException(status_code=403, detail="Invalid PoP signature")
+
+#     return {"message": "Access granted"}
 
 # ---------------- CHALLENGE ISSUE ----------------
 
@@ -156,3 +186,14 @@ def rotate_token(creds: HTTPAuthorizationCredentials = Depends(security)):
 
     log_event(payload["sub"], payload["device_id"], "ROTATE_TOKEN", "SUCCESS")
     return {"access_token": new_token}
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
