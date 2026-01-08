@@ -66,3 +66,22 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+:root {
+  --bg: #0b0f1a;
+  --panel: #11162a;
+  --accent: #6cf2c2;
+  --accent-2: #7aa2ff;
+  --text: #e6e9f0;
+  --muted: #9aa4bf;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #11162a, #070a12);
+  color: var(--text);
+}
