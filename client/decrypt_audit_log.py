@@ -25,7 +25,7 @@ def decrypt_logs():
             try:
                 plaintext = aesgcm.decrypt(nonce, ciphertext, None)
             except Exception as e:
-                print(f"\n❌ Log #{idx} decryption failed:", e)
+                print(f"\n Log #{idx} decryption failed:", e)
                 break
 
             log_entry = json.loads(plaintext.decode())

@@ -113,4 +113,4 @@ r = requests.get(
 )
 print_result("Old token after rotation", r)
 
-print("\n✅ Negative testing complete")
+print("\nNegative testing complete")

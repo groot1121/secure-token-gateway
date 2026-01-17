@@ -1,26 +1,22 @@
-from fastapi import FastAPI, Depends, Header, HTTPException
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import uuid
-import time
-import base64
-import os
+from fastapi.middleware.cors import CORSMiddleware
+import uuid, time, base64, os
 
 from app.auth_utils import (
     generate_token,
     verify_jwt,
     verify_pop_signature,
 )
+from app.key_manager import generate_rsa_keys
+from app.audit_logger import init_audit_logger, log_event
 
-from app.key_manager import generate_rsa_keys, generate_aes_key
-from app.audit_logger import log_event
+# ---------------- APP ----------------
 
-# ---------------- STATE ----------------
-
-registered_devices = {}        # user_id -> device_id -> public_key (PEM)
-challenges = {}                # challenge_id -> challenge object
-revoked_tokens = set()         # revoked jti values
-
-app = FastAPI(title="Zero‑Day Secure Token Gateway")
+app = FastAPI(title="Secure Token Gateway")
 security = HTTPBearer()
 
 # ---------------- STARTUP ----------------
@@ -28,166 +24,18 @@ security = HTTPBearer()
 @app.on_event("startup")
 def startup():
     generate_rsa_keys()
-    generate_aes_key()
+    init_audit_logger()
 
-# ---------------- DEVICE REGISTRATION ----------------
+# ---------------- STATE (DEV ONLY) ----------------
+# TODO: Move to Redis / Mongo
 
-@app.post("/register-device")
-def register_device(user_id: str, device_id: str, public_key: str):
-    registered_devices.setdefault(user_id, {})
-    registered_devices[user_id][device_id] = public_key
+registered_devices: dict[str, dict[str, str]] = {}
+challenges: dict[str, dict] = {}
+revoked_tokens: set[str] = set()
 
-    log_event(user_id, device_id, "REGISTER_DEVICE", "SUCCESS")
-    return {"message": "Device registered successfully"}
+CHALLENGE_TTL_SECONDS = 60
 
-# ---------------- TOKEN ISSUANCE (FIXED) ----------------
-
-@app.post("/issue-token")
-def issue_token(user_id: str, device_id: str):
-    if user_id not in registered_devices:
-        raise HTTPException(status_code=403, detail="User not registered")
-
-    if device_id not in registered_devices[user_id]:
-        raise HTTPException(status_code=403, detail="Device not registered")
-
-    public_key = registered_devices[user_id][device_id]
-
-    # NEW TOKEN ALWAYS ISSUED (no reuse)
-    token = generate_token(user_id, device_id, public_key)
-
-    log_event(user_id, device_id, "ISSUE_TOKEN", "SUCCESS")
-    return {"access_token": token}
-
-# ---------------- PROTECTED ENDPOINT ----------------
-
-from cryptography.exceptions import InvalidSignature
-
-@app.get("/protected")
-def protected(
-    creds: HTTPAuthorizationCredentials = Depends(security),
-    x_pop_signature: str = Header(..., alias="X-Pop-Signature"),
-):
-    payload = verify_jwt(creds.credentials)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    jti = payload["jti"]
-    if jti in revoked_tokens:
-        raise HTTPException(status_code=401, detail="Token revoked")
-
-    try:
-        message = b"GET:/protected"
-        signature = base64.b64decode(x_pop_signature)
-        public_key = payload["cnf"]["pk"]
-
-        if not verify_pop_signature(message, signature, public_key):
-            raise HTTPException(status_code=403, detail="Invalid PoP signature")
-
-    except Exception:
-        raise HTTPException(status_code=403, detail="Invalid PoP signature")
-
-    return {"message": "Access granted"}
-
-
-
-# @app.get("/protected")
-# def protected(
-#     creds: HTTPAuthorizationCredentials = Depends(security),
-#     x_pop_signature: str = Header(..., alias="X-Pop-Signature"),
-# ):
-#     payload = verify_jwt(creds.credentials)
-#     if not payload:
-#         raise HTTPException(status_code=401, detail="Invalid token")
-
-#     jti = payload["jti"]
-#     if jti in revoked_tokens:
-#         raise HTTPException(status_code=401, detail="Token revoked")
-
-#     message = b"GET:/protected"
-#     signature = base64.b64decode(x_pop_signature)
-#     public_key = payload["cnf"]["pk"]
-
-#     if not verify_pop_signature(message, signature, public_key):
-#         raise HTTPException(status_code=403, detail="Invalid PoP signature")
-
-#     return {"message": "Access granted"}
-
-# ---------------- CHALLENGE ISSUE ----------------
-
-@app.get("/challenge")
-def issue_challenge():
-    challenge_id = str(uuid.uuid4())
-    nonce_bytes = os.urandom(16)
-    nonce_b64 = base64.b64encode(nonce_bytes).decode()
-
-    challenges[challenge_id] = {
-        "nonce": nonce_b64,
-        "issued_at": time.time(),
-        "used": False,
-    }
-
-    log_event("system", "n/a", "CHALLENGE_ISSUED", "SUCCESS")
-
-    return {
-        "challenge_id": challenge_id,
-        "nonce": nonce_b64,
-    }
-
-# ---------------- CHALLENGE VERIFY (FIXED) ----------------
-
-@app.post("/challenge-verify")
-def verify_challenge(
-    challenge_id: str,
-    signature: str,
-    user_id: str,
-    device_id: str,
-):
-    challenge = challenges.get(challenge_id)
-    if not challenge:
-        raise HTTPException(status_code=401, detail="Invalid challenge")
-
-    if challenge["used"]:
-        raise HTTPException(status_code=403, detail="Challenge already used")
-
-    if user_id not in registered_devices or device_id not in registered_devices[user_id]:
-        raise HTTPException(status_code=403, detail="Unknown device")
-
-    challenge["used"] = True
-
-    nonce_bytes = base64.b64decode(challenge["nonce"])
-    signature_bytes = base64.b64decode(signature)
-    public_key = registered_devices[user_id][device_id]
-
-    if not verify_pop_signature(nonce_bytes, signature_bytes, public_key):
-        raise HTTPException(status_code=403, detail="Invalid signature")
-
-    log_event(user_id, device_id, "CHALLENGE_VERIFY", "SUCCESS")
-    return {"message": "Challenge verified successfully"}
-
-# ---------------- TOKEN ROTATION (FIXED) ----------------
-
-@app.post("/rotate-token")
-def rotate_token(creds: HTTPAuthorizationCredentials = Depends(security)):
-    payload = verify_jwt(creds.credentials)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    jti = payload["jti"]
-    if jti in revoked_tokens:
-        raise HTTPException(status_code=401, detail="Token already revoked")
-
-    revoked_tokens.add(jti)
-
-    new_token = generate_token(
-        payload["sub"],
-        payload["device_id"],
-        payload["cnf"]["pk"],
-    )
-
-    log_event(payload["sub"], payload["device_id"], "ROTATE_TOKEN", "SUCCESS")
-    return {"access_token": new_token}
-
-from fastapi.middleware.cors import CORSMiddleware
+# ---------------- CORS ----------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -197,3 +45,148 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------- DEVICE REGISTRATION ----------------
+
+@app.post("/register-device")
+def register_device(user_id: str, device_id: str, public_key: str):
+    registered_devices.setdefault(user_id, {})
+    registered_devices[user_id][device_id] = public_key
+
+    log_event(user_id, device_id, "REGISTER_DEVICE", "SUCCESS")
+    return {"status": "registered"}
+
+# ---------------- TOKEN ISSUE ----------------
+
+@app.post("/issue-token")
+def issue_token(user_id: str, device_id: str):
+    if user_id not in registered_devices:
+        raise HTTPException(403, "user not registered")
+
+    if device_id not in registered_devices[user_id]:
+        raise HTTPException(403, "device not registered")
+
+    token = generate_token(
+        user_id,
+        device_id,
+        registered_devices[user_id][device_id],
+    )
+
+    log_event(user_id, device_id, "ISSUE_TOKEN", "SUCCESS")
+    return {"access_token": token}
+
+# ---------------- PROTECTED ----------------
+
+@app.get("/protected")
+def protected(
+    request: Request,
+    creds: HTTPAuthorizationCredentials = Depends(security),
+    x_pop_signature: str = Header(..., alias="X-Pop-Signature"),
+):
+    payload = verify_jwt(creds.credentials)
+    if not payload:
+        raise HTTPException(401, "invalid token")
+
+    if payload["jti"] in revoked_tokens:
+        raise HTTPException(401, "revoked token")
+
+    # 🔒 FROZEN CANONICAL MESSAGE (DO NOT CHANGE)
+    message = f"ACCESS:{payload['jti']}".encode("utf-8")
+
+    signature = base64.b64decode(x_pop_signature)
+    public_key = payload["cnf"]["pk"]
+
+    if not verify_pop_signature(message, signature, public_key):
+        log_event(
+            payload["sub"],
+            payload["device_id"],
+            "ACCESS_DENIED",
+            "BAD_SIGNATURE",
+        )
+        raise HTTPException(403, "bad signature")
+
+    log_event(
+        payload["sub"],
+        payload["device_id"],
+        "ACCESS_GRANTED",
+        "SUCCESS",
+        payload={
+            "jti": payload["jti"],
+            "path": request.url.path,
+            "method": request.method,
+        },
+    )
+    return {"message": "access granted"}
+
+# ---------------- CHALLENGE ----------------
+
+@app.get("/challenge")
+def challenge():
+    cid = str(uuid.uuid4())
+    nonce = base64.b64encode(os.urandom(32)).decode()
+
+    challenges[cid] = {
+        "nonce": nonce,
+        "used": False,
+        "ts": time.time(),
+    }
+
+    log_event("system", "n/a", "CHALLENGE_ISSUED", "SUCCESS")
+    return {"challenge_id": cid, "nonce": nonce}
+
+# ---------------- CHALLENGE VERIFY ----------------
+
+@app.post("/challenge-verify")
+def challenge_verify(
+    challenge_id: str,
+    signature: str,
+    user_id: str,
+    device_id: str,
+):
+    challenge = challenges.get(challenge_id)
+    if not challenge:
+        raise HTTPException(401, "invalid challenge")
+
+    if challenge["used"]:
+        raise HTTPException(403, "challenge already used")
+
+    if time.time() - challenge["ts"] > CHALLENGE_TTL_SECONDS:
+        raise HTTPException(403, "challenge expired")
+
+    if user_id not in registered_devices:
+        raise HTTPException(403, "unknown user")
+
+    if device_id not in registered_devices[user_id]:
+        raise HTTPException(403, "unknown device")
+
+    # 🔒 FROZEN CANONICAL MESSAGE
+    message = f"CHALLENGE:{challenge_id}:{challenge['nonce']}".encode("utf-8")
+
+    sig = base64.b64decode(signature)
+    pub = registered_devices[user_id][device_id]
+
+    if not verify_pop_signature(message, sig, pub):
+        log_event(user_id, device_id, "CHALLENGE_FAILED", "BAD_SIGNATURE")
+        raise HTTPException(403, "bad challenge signature")
+
+    challenge["used"] = True
+    log_event(user_id, device_id, "CHALLENGE_VERIFIED", "SUCCESS")
+    return {"status": "challenge verified"}
+
+# ---------------- ROTATE ----------------
+
+@app.post("/rotate-token")
+def rotate(creds: HTTPAuthorizationCredentials = Depends(security)):
+    payload = verify_jwt(creds.credentials)
+    if not payload:
+        raise HTTPException(401, "invalid token")
+
+    revoked_tokens.add(payload["jti"])
+
+    new_token = generate_token(
+        payload["sub"],
+        payload["device_id"],
+        payload["cnf"]["pk"],
+    )
+
+    log_event(payload["sub"], payload["device_id"], "ROTATE_TOKEN", "SUCCESS")
+    return {"access_token": new_token}
