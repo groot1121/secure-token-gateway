@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from app.key_manager import load_private_key, load_public_key
 from app.data_store import active_tokens, revoked_tokens
+import base64
 
 ALGORITHM = "RS256"
 
@@ -39,9 +40,9 @@ def verify_jwt(token: str):
         public_key = load_public_key()
         payload = jwt.decode(token, public_key, algorithms=[ALGORITHM])
 
-        jti = payload.get("jti")
-        if jti in revoked_tokens or jti not in active_tokens:
-            return None
+        # jti = payload.get("jti")
+        # if jti in revoked_tokens or jti not in active_tokens:
+        #     return None
 
         return payload
 
@@ -51,19 +52,26 @@ def verify_jwt(token: str):
         return None
 
 
-def verify_pop_signature(message: bytes, signature: bytes, public_key_pem: str):
-    public_key = serialization.load_pem_public_key(public_key_pem.encode())
-
+def verify_pop_signature(message: bytes, signature_b64, public_key_pem: str) -> bool:
     try:
+        public_key = serialization.load_pem_public_key(
+            public_key_pem.encode()
+        )
+
+        # 🔒 FORCE bytes → base64 decode safely
+        if isinstance(signature_b64, str):
+            signature = base64.b64decode(signature_b64.encode())
+        else:
+            signature = base64.b64decode(signature_b64)
+
         public_key.verify(
             signature,
             message,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
+            padding.PKCS1v15(),
+            hashes.SHA256(),
         )
         return True
-    except Exception:
+
+    except Exception as e:
+        print("PoP verify failed:", e)
         return False

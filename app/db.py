@@ -1,9 +1,6 @@
 from pymongo import MongoClient
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-client = MongoClient(os.getenv("MONGO_URI"))
-db = client[os.getenv("MONGO_DB")]
-audit_logs = db[os.getenv("MONGO_COLLECTION")]
+client = MongoClient(os.environ["MONGODB_URI"])
+db = client[os.environ["MONGO_DB"]]
+audit_logs = db[os.environ["MONGO_COLLECTION"]]
