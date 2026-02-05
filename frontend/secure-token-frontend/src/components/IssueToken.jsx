@@ -1,19 +1,37 @@
-import api from "../api/gateway";
-import { getDeviceId } from "../utils/device";
-import { saveToken } from "../utils/token";
+import { useState } from "react";
+import axios from "axios";
+
+const API = "http://localhost:8000";
 
 export default function IssueToken() {
-  const issue = async () => {
-    const res = await api.post("/issue-token", null, {
-      params: {
-        user_id: "user1",
-        device_id: getDeviceId(),
-      },
-    });
+  const [status, setStatus] = useState("");
 
-    saveToken(res.data.access_token);
-    alert("Token Issued");
-  };
+  async function handleIssue() {
+    try {
+      setStatus("Issuing token...");
 
-  return <button onClick={issue}>Issue Token</button>;
+      const res = await axios.post(`${API}/issue-token`, null, {
+        params: {
+          user_id: "g1",
+          device_id: "1234",
+        },
+      });
+
+      // ✅ THIS WAS MISSING
+      localStorage.setItem("access_token", res.data.access_token);
+
+      setStatus("✅ Token issued");
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Token issue failed");
+    }
+  }
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>Issue Token</h2>
+      <button onClick={handleIssue}>Issue Token</button>
+      <p>{status}</p>
+    </div>
+  );
 }

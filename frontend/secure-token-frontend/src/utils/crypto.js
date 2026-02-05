@@ -1,37 +1,59 @@
 // src/utils/crypto.js
 
-function base64ToUint8Array(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function stringToUint8Array(str) {
-  return new TextEncoder().encode(str); // UTF‑8 ONLY
-}
-
-export async function signMessage(message) {
-  const jwk = JSON.parse(localStorage.getItem("private_key"));
-  if (!jwk) throw new Error("Private key not found");
-
-  const key = await crypto.subtle.importKey(
-    "jwk",
-    jwk,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
+// Generate RSA key pair (Web Crypto)
+export async function generateRSAKeyPair() {
+  const keyPair = await window.crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"]
   );
 
-  const data = stringToUint8Array(message);
+  const publicKey = await window.crypto.subtle.exportKey(
+    "spki",
+    keyPair.publicKey
+  );
+  const privateKey = await window.crypto.subtle.exportKey(
+    "pkcs8",
+    keyPair.privateKey
+  );
 
-  const signature = await crypto.subtle.sign(
+  return {
+    publicKeyPem: toPem(publicKey, "PUBLIC KEY"),
+    privateKeyPem: toPem(privateKey, "PRIVATE KEY"),
+    privateKey: keyPair.privateKey, // keep for signing
+  };
+}
+
+// ✅ BASE64 signature (matches backend)
+export async function signMessage(message, privateKey) {
+  const encoded = new TextEncoder().encode(message);
+
+  const signature = await window.crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
-    key,
-    data
+    privateKey,
+    encoded
   );
 
-  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+  return arrayBufferToBase64(signature); // ✅ BASE64
+}
+
+// ---------- helpers ----------
+
+function toPem(buffer, label) {
+  const base64 = btoa(
+    String.fromCharCode(...new Uint8Array(buffer))
+  );
+  const formatted = base64.match(/.{1,64}/g).join("\n");
+  return `-----BEGIN ${label}-----\n${formatted}\n-----END ${label}-----`;
+}
+
+function arrayBufferToBase64(buffer) {
+  return btoa(
+    String.fromCharCode(...new Uint8Array(buffer))
+  );
 }
