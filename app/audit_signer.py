@@ -1,32 +1,59 @@
-import hmac
-import hashlib
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from datetime import datetime
+import base64
 import os
 
-AUDIT_SIGNING_KEY = os.getenv("AUDIT_SIGNING_KEY")
+SIGN_KEY_PATH = "keys/audit_signing_key.pem"
+VERIFY_KEY_PATH = "keys/audit_signing_pub.pem"
 
-if not AUDIT_SIGNING_KEY:
-    raise RuntimeError("AUDIT_SIGNING_KEY is not set")
 
-def canonical_audit_string(
-    user_id: str,
-    device_id: str,
-    event: str,
-    status: str,
-    encrypted_payload: str | None,
-    created_at: str,
-) -> str:
-    return (
-        f"{user_id}|"
-        f"{device_id}|"
-        f"{event}|"
-        f"{status}|"
-        f"{encrypted_payload if encrypted_payload is not None else 'null'}|"
-        f"{created_at}"
+def load_signing_key():
+    with open(SIGN_KEY_PATH, "rb") as f:
+        return serialization.load_pem_private_key(
+            f.read(),
+            password=None,
+        )
+
+
+def load_verify_key():
+    with open(VERIFY_KEY_PATH, "rb") as f:
+        return serialization.load_pem_public_key(f.read())
+
+
+def sign_root_hash(root_hash: str):
+    key = load_signing_key()
+    ts = datetime.utcnow().isoformat()
+
+    message = f"{root_hash}:{ts}".encode()
+
+    signature = key.sign(
+        message,
+        padding.PKCS1v15(),
+        hashes.SHA256(),
     )
 
-def sign_audit_log(canonical_string: str) -> str:
-    return hmac.new(
-        AUDIT_SIGNING_KEY.encode("utf-8"),
-        canonical_string.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
+    return {
+        "root_hash": root_hash,
+        "timestamp": ts,
+        "signature": base64.b64encode(signature).decode(),
+        "alg": "RS256",
+    }
+
+
+def verify_root_signature(root_hash, timestamp, signature_b64):
+    key = load_verify_key()
+
+    message = f"{root_hash}:{timestamp}".encode()
+    signature = base64.b64decode(signature_b64)
+
+    try:
+        key.verify(
+            signature,
+            message,
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+        return True
+    except Exception:
+        return False
