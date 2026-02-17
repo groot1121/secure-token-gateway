@@ -1,8 +1,9 @@
+// src/components/ProtectedAccess.jsx
+
 import { useState } from "react";
 import axios from "axios";
 import { signMessage } from "../utils/crypto";
 
-// ✅ Base64URL-safe JWT decode
 function decodeJwt(token) {
   const payload = token.split(".")[1];
   const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
@@ -23,13 +24,8 @@ export default function ProtectedAccess() {
         return;
       }
 
-      // ✅ correct JWT payload
-      const jwtPayload = decodeJwt(token);
-
-      // ✅ EXACT canonical message
-      const message = `ACCESS:${jwtPayload.jti}`;
-
-      // ✅ Base64 signature
+      const payload = decodeJwt(token);
+      const message = `ACCESS:${payload.jti}`;
       const signature = await signMessage(message, privateKey);
 
       const res = await axios.get("http://localhost:8000/protected", {
@@ -40,14 +36,14 @@ export default function ProtectedAccess() {
       });
 
       setResult(JSON.stringify(res.data, null, 2));
-    } catch (err) {
-      console.error(err);
-      setResult("ACCESS DENIED");
+    } catch (e) {
+      console.error(e);
+      setResult("❌ ACCESS DENIED");
     }
   }
 
   return (
-    <div>
+    <div style={{ padding: 20 }}>
       <h3>Protected Resource</h3>
       <button onClick={handleAccess}>Access</button>
       <pre>{result}</pre>
