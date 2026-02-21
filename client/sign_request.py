@@ -1,9 +1,17 @@
 import base64
+import jwt
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
 
-MESSAGE = b"GET:/protected"
+TOKEN = "PASTE_YOUR_JWT_HERE"
+
+# Decode JWT WITHOUT verifying (just to get jti)
+payload = jwt.decode(TOKEN, options={"verify_signature": False})
+jti = payload["jti"]
+
+# Build EXACT message backend expects
+MESSAGE = f"ACCESS:{jti}".encode()
 
 with open("client_private_key.pem", "rb") as f:
     private_key = serialization.load_pem_private_key(
@@ -13,10 +21,7 @@ with open("client_private_key.pem", "rb") as f:
 
 signature = private_key.sign(
     MESSAGE,
-    padding.PSS(
-        mgf=padding.MGF1(hashes.SHA256()),
-        salt_length=padding.PSS.MAX_LENGTH
-    ),
+    padding.PKCS1v15(),   # ✅ MUST MATCH BACKEND
     hashes.SHA256()
 )
 

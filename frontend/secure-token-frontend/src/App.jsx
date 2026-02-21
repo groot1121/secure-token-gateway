@@ -1,8 +1,12 @@
 import RegisterDevice from "./components/RegisterDevice";
 import IssueToken from "./components/IssueToken";
 import ProtectedAccess from "./components/ProtectedAccess";
+import RotateToken from "./components/RotateToken";
+import useAutoRotate from "./hooks/useAutoRotate";
 
 export default function App() {
+
+   useAutoRotate();
   return (
     <>
       <RegisterDevice />
@@ -10,6 +14,8 @@ export default function App() {
       <IssueToken />
       <hr />
       <ProtectedAccess />
+      <hr />
+      <RotateToken />
     </>
   );
 }
