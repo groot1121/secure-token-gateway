@@ -1,35 +1,32 @@
 version: "3.9"
 
 services:
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6380:6379"
+    restart: unless-stopped
+
   backend:
-    build: .
-    container_name: secure-gateway-backend
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: secure-backend
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     depends_on:
-      - mongo
-    restart: unless-stopped
-
-  mongo:
-    image: mongo:7.0
-    container_name: secure-gateway-mongo
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    restart: unless-stopped
-
-volumes:
-  mongo_data:
-
-services:
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-
-  backend:
+      - redis
     environment:
-      REDIS_URL: redis://redis:6379/0
+      - REDIS_HOST=redis
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend/secure-token-frontend
+    container_name: secure-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

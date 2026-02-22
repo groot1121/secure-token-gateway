@@ -1,9 +1,10 @@
-import os
+# app/redis_client.py
+
 import redis
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-redis_client = redis.Redis.from_url(
-    REDIS_URL,
-    decode_responses=True,
+import os
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=6379,
+    db=0,
+    decode_responses=True
 )

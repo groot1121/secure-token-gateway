@@ -9,35 +9,33 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 from app.key_manager import load_private_key, load_public_key
-from app.data_store import (
-    active_device_tokens,
-    revoked_tokens,
-    cleanup_expired_tokens,
-)
+from app.redis_client import redis_client
 
 ALGORITHM = "RS256"
-
-TOKEN_LIFETIME_SECONDS = 600
+TOKEN_LIFETIME_SECONDS = 600  # 10 minutes
 
 
 # ====================================================
-# TOKEN GENERATION (WITH AUTOMATIC DEVICE ROTATION)
+# TOKEN GENERATION (WITH REDIS ROTATION)
 # ====================================================
 
 def generate_token(user_id: str, device_id: str, client_public_key: str):
-
-    cleanup_expired_tokens()
 
     now = int(time.time())
     exp = now + TOKEN_LIFETIME_SECONDS
     jti = str(uuid.uuid4())
 
-    device_key = f"{user_id}:{device_id}"
+    device_key = f"active:{user_id}:{device_id}"
+    revoked_key_prefix = "revoked:"
 
-    # 🔁 Revoke old token if device already has one
-    if device_key in active_device_tokens:
-        old_jti = active_device_tokens[device_key]["jti"]
-        revoked_tokens.add(old_jti)
+    # 🔁 Revoke old token if exists
+    old_jti = redis_client.get(device_key)
+    if old_jti:
+        redis_client.setex(
+            f"{revoked_key_prefix}{old_jti}",
+            TOKEN_LIFETIME_SECONDS,
+            "1"
+        )
 
     payload = {
         "sub": user_id,
@@ -53,11 +51,12 @@ def generate_token(user_id: str, device_id: str, client_public_key: str):
     private_key = load_private_key()
     token = jwt.encode(payload, private_key, algorithm=ALGORITHM)
 
-    # Store active token for this device
-    active_device_tokens[device_key] = {
-        "jti": jti,
-        "exp": exp
-    }
+    # ✅ Store new active token with TTL
+    redis_client.setex(
+        device_key,
+        TOKEN_LIFETIME_SECONDS,
+        jti
+    )
 
     return token
 
@@ -68,24 +67,19 @@ def generate_token(user_id: str, device_id: str, client_public_key: str):
 
 def verify_jwt(token: str):
     try:
-        cleanup_expired_tokens()
-
         public_key = load_public_key()
         payload = jwt.decode(token, public_key, algorithms=[ALGORITHM])
 
         jti = payload.get("jti")
-        device_key = f"{payload['sub']}:{payload['device_id']}"
+        device_key = f"active:{payload['sub']}:{payload['device_id']}"
 
-        # ❌ Reject revoked tokens
-        if jti in revoked_tokens:
+        # ❌ Reject revoked token
+        if redis_client.exists(f"revoked:{jti}"):
             return None
 
-        # ❌ Reject if no active token for device
-        if device_key not in active_device_tokens:
-            return None
-
-        # ❌ Reject if token is not the current active one
-        if active_device_tokens[device_key]["jti"] != jti:
+        # ❌ Reject if not current active device token
+        active_jti = redis_client.get(device_key)
+        if not active_jti or active_jti != jti:
             return None
 
         return payload
