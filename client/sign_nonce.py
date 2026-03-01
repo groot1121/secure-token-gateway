@@ -2,7 +2,7 @@ import json
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-nonce = "EQHJMnAFajhP8JvZ2Np6hsbVi1LQcsqwoMNkojquaIQ="  # replace with actual nonce
+nonce = "SD+3qfZ9PynYW7l5Hq+XJgueb6Z6HUvIz9Ho7ND20jU="  # replace with actual nonce
 
 canonical = json.dumps(
     {"nonce": nonce},

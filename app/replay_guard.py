@@ -1,53 +1,51 @@
+import redis
 import hashlib
-from app.redis_client import redis_client
 
-# ===============================
-# CONFIG
-# ===============================
+# ================= REDIS CLIENT =================
 
-JTI_TTL_SECONDS = 300        # 5 minutes
-SIG_TTL_SECONDS = 60         # PoP signatures are very short-lived
+redis_client = redis.Redis(
+    host="localhost",
+    port=6379,
+    db=0,
+    decode_responses=True
+)
 
-# ===============================
-# HELPERS
-# ===============================
+# ================= CONFIG =================
 
-def _hash(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
+JTI_TTL_SECONDS = 600        # 10 minutes
+SIGNATURE_TTL_SECONDS = 600 # 10 minutes
 
-# ===============================
-# REPLAY CHECKS
-# ===============================
+# ================= JTI REPLAY CHECK =================
 
-# app/replay_guard.py
 def check_and_mark_jti(jti: str) -> bool:
     """
-    Returns True ONLY if this is a replay
+    Returns True if replay detected.
+    Returns False if first time usage.
     """
-    key = f"jti:{jti}"
 
-    inserted = redis_client.set(
-        key,
-        "1",
-        nx=True,
-        ex=JTI_TTL_SECONDS,
-    )
+    key = f"replay:jti:{jti}"
 
-    # ✅ inserted == True  → first time (NOT replay)
-    # ❌ inserted == None → already exists (REPLAY)
-    return inserted is None
+    if redis_client.exists(key):
+        return True
 
+    redis_client.setex(key, JTI_TTL_SECONDS, "used")
+    return False
 
+# ================= SIGNATURE REPLAY CHECK =================
 
-def check_and_mark_signature(sig: str) -> bool:
-    key = f"sig:{sig}"
+def check_and_mark_signature(signature: str) -> bool:
+    """
+    Returns True if replay detected.
+    Returns False if first time usage.
+    """
 
-    inserted = redis_client.set(
-        key,
-        "1",
-        nx=True,
-        ex=SIG_TTL_SECONDS,
-    )
+    # Hash signature so we don't store massive base64 strings
+    sig_hash = hashlib.sha256(signature.encode()).hexdigest()
 
-    return inserted is None
+    key = f"replay:sig:{sig_hash}"
 
+    if redis_client.exists(key):
+        return True
+
+    redis_client.setex(key, SIGNATURE_TTL_SECONDS, "used")
+    return False

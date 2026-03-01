@@ -1,119 +1,83 @@
-# app/auth_utils.py
-
-import jwt
-import time
-import uuid
 import base64
-
-from cryptography.hazmat.primitives import hashes, serialization
+import jwt
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
+from datetime import datetime, timedelta
+import uuid
 
-from app.key_manager import load_private_key, load_public_key
-from app.redis_client import redis_client
-
-ALGORITHM = "RS256"
-TOKEN_LIFETIME_SECONDS = 600  # 10 minutes
+PRIVATE_KEY_PATH = "keys/private.pem"
+PUBLIC_KEY_PATH = "keys/public.pem"
 
 
-# ====================================================
-# TOKEN GENERATION (WITH REDIS ROTATION)
-# ====================================================
+# ================= TOKEN GENERATION =================
 
-def generate_token(user_id: str, device_id: str, client_public_key: str):
+def generate_token(user_id, device_id, public_key):
 
-    now = int(time.time())
-    exp = now + TOKEN_LIFETIME_SECONDS
-    jti = str(uuid.uuid4())
-
-    device_key = f"active:{user_id}:{device_id}"
-    revoked_key_prefix = "revoked:"
-
-    # 🔁 Revoke old token if exists
-    old_jti = redis_client.get(device_key)
-    if old_jti:
-        redis_client.setex(
-            f"{revoked_key_prefix}{old_jti}",
-            TOKEN_LIFETIME_SECONDS,
-            "1"
-        )
+    with open(PRIVATE_KEY_PATH, "rb") as f:
+        private_key = f.read()
 
     payload = {
         "sub": user_id,
         "device_id": device_id,
-        "iat": now,
-        "exp": exp,
-        "jti": jti,
+        "iat": datetime.utcnow(),
+        # 🔐 Short‑lived token (2 minutes)
+        "exp": datetime.utcnow() + timedelta(minutes=2),
+        "jti": str(uuid.uuid4()),
         "cnf": {
-            "pk": client_public_key
+            "pk": public_key
         }
     }
 
-    private_key = load_private_key()
-    token = jwt.encode(payload, private_key, algorithm=ALGORITHM)
-
-    # ✅ Store new active token with TTL
-    redis_client.setex(
-        device_key,
-        TOKEN_LIFETIME_SECONDS,
-        jti
-    )
+    token = jwt.encode(payload, private_key, algorithm="RS256")
 
     return token
 
 
-# ====================================================
-# VERIFY JWT
-# ====================================================
+# ================= JWT VERIFICATION =================
 
-def verify_jwt(token: str):
+def verify_jwt(token):
     try:
-        public_key = load_public_key()
-        payload = jwt.decode(token, public_key, algorithms=[ALGORITHM])
+        with open(PUBLIC_KEY_PATH, "rb") as f:
+            public_key = f.read()
 
-        jti = payload.get("jti")
-        device_key = f"active:{payload['sub']}:{payload['device_id']}"
+        return jwt.decode(token, public_key, algorithms=["RS256"])
 
-        # ❌ Reject revoked token
-        if redis_client.exists(f"revoked:{jti}"):
-            return None
-
-        # ❌ Reject if not current active device token
-        active_jti = redis_client.get(device_key)
-        if not active_jti or active_jti != jti:
-            return None
-
-        return payload
-
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
+    except Exception:
         return None
 
 
-# ====================================================
-# VERIFY POP SIGNATURE
-# ====================================================
+# ================= PROOF OF POSSESSION VERIFICATION =================
 
-def verify_pop_signature(message: bytes, signature_b64, public_key_pem: str) -> bool:
+def verify_pop_signature(message: bytes, signature_b64: str, public_key_str: str):
+
     try:
+        # Normalize escaped newlines
+        public_key_str = public_key_str.replace("\\n", "\n")
+
         public_key = serialization.load_pem_public_key(
-            public_key_pem.encode()
+            public_key_str.encode()
         )
 
-        if isinstance(signature_b64, str):
-            signature = base64.b64decode(signature_b64.encode())
-        else:
-            signature = base64.b64decode(signature_b64)
+        signature = base64.b64decode(signature_b64)
 
         public_key.verify(
             signature,
             message,
-            padding.PKCS1v15(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
+            ),
             hashes.SHA256(),
         )
 
         return True
 
+    except InvalidSignature:
+        print("PoP verify failed: InvalidSignature")
+        return False
+
     except Exception as e:
-        print("PoP verify failed:", e)
+        print("PoP verify error:", str(e))
         return False
