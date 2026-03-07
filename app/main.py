@@ -53,7 +53,7 @@ mongo_db = mongo_client[MONGO_DB]
 
 devices_collection = mongo_db["devices"]   # new collection
 audit_collection = mongo_db[os.getenv("MONGO_COLLECTION")]  # existing
-
+users_collection = mongo_db["users"]
 
 # ================= REDIS =================
 
@@ -242,6 +242,53 @@ async def register_device(data: RegisterRequest):
     )
 
     return {"status": "registered"}
+
+
+
+from passlib.hash import bcrypt
+
+class RegisterUser(BaseModel):
+    username: str
+    password: str
+
+@app.post("/register")
+async def register_user(data: RegisterUser):
+
+    existing = users_collection.find_one({"username": data.username})
+
+    if existing:
+        raise HTTPException(400, "User already exists")
+
+    hashed = bcrypt.hash(data.password)
+
+    users_collection.insert_one({
+        "username": data.username,
+        "password": hashed,
+        "created_at": datetime.utcnow()
+    })
+
+    return {"message": "User registered"}
+
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/login")
+async def login(data: LoginRequest):
+
+    user = users_collection.find_one({"username": data.username})
+
+    if not user:
+        raise HTTPException(401, "Invalid credentials")
+
+    if not bcrypt.verify(data.password, user["password"]):
+        raise HTTPException(401, "Invalid credentials")
+
+    return {"message": "Login success"}
+
+
 
 
 # ================= CHALLENGE =================
@@ -692,3 +739,33 @@ async def release_device(
     )
 
     return {"message": "Device released"}
+
+
+#================================================
+
+from app.user_store import create_user, verify_user
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/login")
+async def login(data: LoginRequest):
+
+    if not verify_user(data.username, data.password):
+        raise HTTPException(401, "Invalid credentials")
+
+    return {"status": "authenticated"}
+
+
+@app.post("/register-user")
+async def register_user(data: LoginRequest):
+
+    ok = create_user(data.username, data.password)
+
+    if not ok:
+        raise HTTPException(400, "User already exists")
+
+    return {"status": "created"}

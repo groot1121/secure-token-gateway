@@ -17,6 +17,10 @@ import {
 
 import useAutoRotate from "../hooks/useAutoRotate";
 
+import axios from "axios";
+
+const API = "http://127.0.0.1:8000";
+
 export default function UserAuthPage() {
 
   const [username,setUsername] = useState("");
@@ -29,72 +33,111 @@ export default function UserAuthPage() {
 
   const [device] = useState("device-" + crypto.randomUUID());
 
-  // 🔁 AUTO ROTATE TOKEN
+  // 🔁 AUTO TOKEN ROTATION
   useAutoRotate(token, privateKey, setToken);
 
-async function startAuth() {
+  // =========================
+  // REGISTER USER
+  // =========================
 
-  try {
+  async function registerUser(){
 
-    setStatus("Generating keys...");
+    try{
 
-    const keyPair = await generateKeyPair();
-    setPrivateKey(keyPair.privateKey);
+      await axios.post(`${API}/register`,{
+        username,
+        password
+      });
 
-    const publicKeyPem = await exportPublicKey(keyPair.publicKey);
+      setStatus("User registered successfully");
 
-    setStatus("Registering device...");
+    }
+    catch(err){
 
-    await registerDevice(username, device, publicKeyPem);
+      console.error(err);
+      setStatus("Registration failed");
 
-    setStatus("Requesting challenge...");
-
-    const challengeRes = await requestChallenge(username, device);
-
-    // FIX
-    const challenge =
-      challengeRes.data?.challenge || challengeRes.challenge;
-
-    if (!challenge) {
-      throw new Error("Challenge not received from server");
     }
 
-    const rawBytes = Uint8Array.from(
-      atob(challenge),
-      c => c.charCodeAt(0)
-    );
+  }
 
-    setStatus("Signing challenge...");
+  // =========================
+  // LOGIN + WEBCRYPTO FLOW
+  // =========================
 
-    const signature = await signRawBytes(
-      keyPair.privateKey,
-      rawBytes
-    );
+  async function startAuth(){
 
-    setStatus("Verifying challenge...");
+    try{
 
-    await verifyChallenge(username, device, signature);
+      setStatus("Logging in...");
 
-    setStatus("Issuing token...");
+      await axios.post(`${API}/login`,{
+        username,
+        password
+      });
 
-    const tokenRes = await issueToken(username, device);
+      setStatus("Generating device keys...");
 
-    const newToken =
-      tokenRes.data?.access_token || tokenRes.access_token;
+      const keyPair = await generateKeyPair();
+      setPrivateKey(keyPair.privateKey);
 
-    setToken(newToken);
+      const publicKeyPem = await exportPublicKey(keyPair.publicKey);
 
-    setStatus("Login successful");
+      setStatus("Registering device...");
+
+      await registerDevice(username, device, publicKeyPem);
+
+      setStatus("Requesting challenge...");
+
+      const challengeRes = await requestChallenge(username, device);
+
+      const challenge =
+        challengeRes.data?.challenge || challengeRes.challenge;
+
+      if(!challenge){
+        throw new Error("Challenge not received from server");
+      }
+
+      const rawBytes = Uint8Array.from(
+        atob(challenge),
+        c => c.charCodeAt(0)
+      );
+
+      setStatus("Signing challenge...");
+
+      const signature = await signRawBytes(
+        keyPair.privateKey,
+        rawBytes
+      );
+
+      setStatus("Verifying challenge...");
+
+      await verifyChallenge(username, device, signature);
+
+      setStatus("Issuing token...");
+
+      const tokenRes = await issueToken(username, device);
+
+      const newToken =
+        tokenRes.data?.access_token || tokenRes.access_token;
+
+      setToken(newToken);
+
+      setStatus("Login successful");
+
+    }
+    catch(err){
+
+      console.error(err);
+      setStatus("Authentication failed");
+
+    }
 
   }
-  catch (err) {
 
-    console.error(err);
-    setStatus("Authentication failed");
-
-  }
-}
-
+  // =========================
+  // ACCESS PROTECTED API
+  // =========================
 
   async function accessAPI(){
 
@@ -126,6 +169,10 @@ async function startAuth() {
 
   }
 
+  // =========================
+  // UI
+  // =========================
+
   return(
 
     <div style={{padding:"40px"}}>
@@ -149,6 +196,12 @@ async function startAuth() {
 
       <br/><br/>
 
+      <button onClick={registerUser}>
+        Register
+      </button>
+
+      <br/><br/>
+
       <button onClick={startAuth}>
         Login
       </button>
@@ -164,4 +217,5 @@ async function startAuth() {
     </div>
 
   );
+
 }
