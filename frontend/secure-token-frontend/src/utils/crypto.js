@@ -1,4 +1,9 @@
-// Generate RSA key pair
+// src/utils/crypto.js
+
+// ==============================
+// Generate RSA Key Pair
+// ==============================
+
 export async function generateKeyPair() {
   return await window.crypto.subtle.generateKey(
     {
@@ -12,29 +17,55 @@ export async function generateKeyPair() {
   );
 }
 
-// Export public key to PEM
+// ==============================
+// Export Public Key (PEM)
+// ==============================
+
 export async function exportPublicKey(key) {
   const spki = await window.crypto.subtle.exportKey("spki", key);
-  const b64 = btoa(String.fromCharCode(...new Uint8Array(spki)));
-  return `-----BEGIN PUBLIC KEY-----\n${b64
-    .match(/.{1,64}/g)
-    .join("\n")}\n-----END PUBLIC KEY-----`;
+
+  const b64 = btoa(
+    String.fromCharCode(...new Uint8Array(spki))
+  );
+
+  const pem =
+    "-----BEGIN PUBLIC KEY-----\n" +
+    b64.match(/.{1,64}/g).join("\n") +
+    "\n-----END PUBLIC KEY-----";
+
+  return pem;
 }
 
-// Sign RAW BYTES (for challenge + protected PoP)
+// ==============================
+// Sign RAW BYTES
+// ==============================
+
 export async function signRawBytes(privateKey, rawBytes) {
+
   const signature = await window.crypto.subtle.sign(
-    { name: "RSASSA-PKCS1-v1_5" },
+    {
+      name: "RSASSA-PKCS1-v1_5",
+    },
     privateKey,
     rawBytes
   );
 
-  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+  const sigArray = new Uint8Array(signature);
+
+  let binary = "";
+  sigArray.forEach(b => binary += String.fromCharCode(b));
+
+  return btoa(binary);
 }
 
-// Helper to sign text
+// ==============================
+// Sign TEXT
+// ==============================
+
 export async function signText(privateKey, text) {
+
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
-  return signRawBytes(privateKey, data);
+
+  return await signRawBytes(privateKey, data);
 }

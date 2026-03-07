@@ -23,7 +23,7 @@ def generate_token(user_id, device_id, public_key):
         "device_id": device_id,
         "iat": datetime.utcnow(),
         # 🔐 Short‑lived token (2 minutes)
-        "exp": datetime.utcnow() + timedelta(minutes=2),
+        "exp": datetime.utcnow() + timedelta(minutes=1),
         "jti": str(uuid.uuid4()),
         "cnf": {
             "pk": public_key
@@ -53,7 +53,6 @@ def verify_jwt(token):
 def verify_pop_signature(message: bytes, signature_b64: str, public_key_str: str):
 
     try:
-        # Normalize escaped newlines
         public_key_str = public_key_str.replace("\\n", "\n")
 
         public_key = serialization.load_pem_public_key(
@@ -65,10 +64,7 @@ def verify_pop_signature(message: bytes, signature_b64: str, public_key_str: str
         public_key.verify(
             signature,
             message,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH,
-            ),
+            padding.PKCS1v15(),   # 🔥 FIX HERE
             hashes.SHA256(),
         )
 

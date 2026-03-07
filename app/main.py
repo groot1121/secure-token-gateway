@@ -67,8 +67,8 @@ redis_client = redis.Redis(
 
 # ==================Dynamic rotation==================
 
-ROTATION_MIN = 180   # 3 minutes
-ROTATION_MAX = 300   # 5 minutes
+ROTATION_MIN = 10   # 3 minutes
+ROTATION_MAX = 15   # 5 minutes
 
 # ================= DEVICE QUARANTINE =================
 

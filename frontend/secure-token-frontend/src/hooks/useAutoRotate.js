@@ -1,63 +1,40 @@
 import { useEffect } from "react";
-import axios from "axios";
-import { signMessage } from "../utils/crypto";
+import { signText } from "../utils/crypto";
+import { rotateToken } from "../api/gateway";
 
-const API = "http://localhost:8000";
+export default function useAutoRotate(token, privateKey, setToken) {
 
-function decodeJwt(token) {
-  const payload = token.split(".")[1];
-  const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64.padEnd(
-    base64.length + (4 - (base64.length % 4)) % 4,
-    "="
-  );
-  return JSON.parse(atob(padded));
-}
-
-export default function useAutoRotate() {
   useEffect(() => {
-    let interval;
 
-    async function checkAndRotate() {
-      const token = localStorage.getItem("access_token");
-      const privateKey = window.__PRIVATE_KEY__;
+    if (!token || !privateKey) return;
 
-      if (!token || !privateKey) return;
+    const interval = setInterval(async () => {
 
-      const payload = decodeJwt(token);
+      try {
 
-      const now = Math.floor(Date.now() / 1000);
-      const lifetime = payload.exp - payload.iat;
-      const elapsed = now - payload.iat;
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const message = `ROTATE:${payload.jti}`;
 
-      const rotationThreshold = lifetime * 0.8;
+        const signature = await signText(privateKey, message);
 
-      if (elapsed >= rotationThreshold) {
-        try {
-          const message = `ROTATE:${payload.jti}`;
-          const signature = await signMessage(message, privateKey);
+        const res = await rotateToken(token, signature);
 
-          const res = await axios.post(
-            `${API}/rotate-token`,
-            {},
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "X-Pop-Signature": signature,
-              },
-            }
-          );
+        const newToken = res.data.access_token;
 
-          localStorage.setItem("access_token", res.data.access_token);
-          console.log("🔁 Token auto-rotated");
-        } catch (err) {
-          console.error("Auto rotation failed", err);
-        }
+        console.log("Token rotated");
+
+        setToken(newToken);
+
+      } catch (err) {
+
+        console.error("Rotation failed", err);
+
       }
-    }
 
-    interval = setInterval(checkAndRotate, 10000); // check every 10s
+    }, 8000); // every 8 seconds for demo
 
     return () => clearInterval(interval);
-  }, []);
+
+  }, [token, privateKey, setToken]);
+
 }

@@ -1,7 +1,11 @@
-import Dashboard from "./components/Dashboard";
+import UserAuthPage from "./components/UserAuthPage";
 
 function App() {
-  return <Dashboard />;
+  return (
+    <div>
+      <UserAuthPage />
+    </div>
+  );
 }
 
 export default App;
