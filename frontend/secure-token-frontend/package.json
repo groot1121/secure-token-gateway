@@ -18,11 +18,13 @@
     "react-dom": "^18.2.0",
     "react-globe.gl": "^2.37.0",
     "react-leaflet": "^4.2.1",
+    "react-router-dom": "^6.30.3",
     "react-simple-maps": "^3.0.0",
     "recharts": "^3.7.0",
     "three": "^0.183.2",
     "three-globe": "^2.45.0",
-    "topojson-client": "^3.1.0"
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

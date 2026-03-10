@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 import {
   generateKeyPair,
@@ -17,11 +19,11 @@ import {
 
 import useAutoRotate from "../hooks/useAutoRotate";
 
-import axios from "axios";
-
 const API = "http://127.0.0.1:8000";
 
-export default function UserAuthPage() {
+export default function UserAuthPage(){
+
+  const navigate = useNavigate();
 
   const [username,setUsername] = useState("");
   const [password,setPassword] = useState("");
@@ -30,19 +32,69 @@ export default function UserAuthPage() {
   const [token,setToken] = useState(null);
 
   const [status,setStatus] = useState("");
+  const [loading,setLoading] = useState(false);
 
   const [device] = useState("device-" + crypto.randomUUID());
 
-  // 🔁 AUTO TOKEN ROTATION
   useAutoRotate(token, privateKey, setToken);
 
-  // =========================
-  // REGISTER USER
-  // =========================
+  // MATRIX BACKGROUND EFFECT
+  useEffect(()=>{
+
+    const canvas = document.getElementById("matrix");
+
+    if(!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+
+    canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+
+    const letters = "01SECUREGATEWAYCYBER";
+    const fontSize = 14;
+    const columns = canvas.width / fontSize;
+
+    const drops = [];
+
+    for(let x = 0; x < columns; x++){
+      drops[x] = 1;
+    }
+
+    function draw(){
+
+      ctx.fillStyle = "rgba(0,0,0,0.05)";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      ctx.fillStyle = "#0f0";
+      ctx.font = fontSize + "px monospace";
+
+      for(let i = 0; i < drops.length; i++){
+
+        const text = letters[Math.floor(Math.random()*letters.length)];
+
+        ctx.fillText(text,i*fontSize,drops[i]*fontSize);
+
+        if(drops[i]*fontSize > canvas.height && Math.random() > 0.975){
+          drops[i] = 0;
+        }
+
+        drops[i]++;
+
+      }
+
+    }
+
+    const interval = setInterval(draw,33);
+
+    return ()=>clearInterval(interval);
+
+  },[]);
 
   async function registerUser(){
 
     try{
+
+      setLoading(true);
 
       await axios.post(`${API}/register`,{
         username,
@@ -58,72 +110,68 @@ export default function UserAuthPage() {
       setStatus("Registration failed");
 
     }
+    finally{
+      setLoading(false);
+    }
 
   }
-
-  // =========================
-  // LOGIN + WEBCRYPTO FLOW
-  // =========================
 
   async function startAuth(){
 
     try{
 
-      setStatus("Logging in...");
+      setLoading(true);
+      setStatus("Initializing Zero‑Trust authentication...");
 
       await axios.post(`${API}/login`,{
         username,
         password
       });
 
-      setStatus("Generating device keys...");
-
       const keyPair = await generateKeyPair();
       setPrivateKey(keyPair.privateKey);
 
       const publicKeyPem = await exportPublicKey(keyPair.publicKey);
 
-      setStatus("Registering device...");
+      setStatus("Registering device identity...");
 
-      await registerDevice(username, device, publicKeyPem);
+      await registerDevice(username,device,publicKeyPem);
 
-      setStatus("Requesting challenge...");
-
-      const challengeRes = await requestChallenge(username, device);
+      const challengeRes = await requestChallenge(username,device);
 
       const challenge =
         challengeRes.data?.challenge || challengeRes.challenge;
 
-      if(!challenge){
-        throw new Error("Challenge not received from server");
-      }
-
       const rawBytes = Uint8Array.from(
         atob(challenge),
-        c => c.charCodeAt(0)
+        c=>c.charCodeAt(0)
       );
-
-      setStatus("Signing challenge...");
 
       const signature = await signRawBytes(
         keyPair.privateKey,
         rawBytes
       );
 
-      setStatus("Verifying challenge...");
+      setStatus("Verifying device proof‑of‑possession...");
 
-      await verifyChallenge(username, device, signature);
+      await verifyChallenge(username,device,signature);
 
-      setStatus("Issuing token...");
-
-      const tokenRes = await issueToken(username, device);
+      const tokenRes = await issueToken(username,device);
 
       const newToken =
         tokenRes.data?.access_token || tokenRes.access_token;
 
       setToken(newToken);
 
-      setStatus("Login successful");
+      localStorage.setItem("access_token",newToken);
+
+      const payload = JSON.parse(atob(newToken.split(".")[1]));
+
+      if(payload.role === "admin"){
+        navigate("/dashboard");
+      }else{
+        navigate("/welcome");
+      }
 
     }
     catch(err){
@@ -132,21 +180,20 @@ export default function UserAuthPage() {
       setStatus("Authentication failed");
 
     }
+    finally{
+      setLoading(false);
+    }
 
   }
 
-  // =========================
-  // ACCESS PROTECTED API
-  // =========================
-
   async function accessAPI(){
 
-    try{
+    if(!token || !privateKey){
+      setStatus("Login first");
+      return;
+    }
 
-      if(!token){
-        setStatus("Token missing");
-        return;
-      }
+    try{
 
       const payload = JSON.parse(atob(token.split(".")[1]));
 
@@ -162,57 +209,77 @@ export default function UserAuthPage() {
     catch(err){
 
       console.error(err);
-
-      setStatus("Protected access failed");
+      setStatus("Protected request failed");
 
     }
 
   }
 
-  // =========================
-  // UI
-  // =========================
-
   return(
 
-    <div style={{padding:"40px"}}>
+    <div className="min-h-screen flex items-center justify-center bg-black text-white relative overflow-hidden">
 
-      <h2>Secure Gateway Login</h2>
+      {/* MATRIX BACKGROUND */}
 
-      <input
-        placeholder="username"
-        value={username}
-        onChange={(e)=>setUsername(e.target.value)}
+      <canvas
+        id="matrix"
+        className="absolute inset-0 opacity-30"
       />
 
-      <br/><br/>
+      {/* LOGIN CARD */}
 
-      <input
-        type="password"
-        placeholder="password"
-        value={password}
-        onChange={(e)=>setPassword(e.target.value)}
-      />
+      <div className="relative z-10 bg-white/5 backdrop-blur-xl border border-cyan-500/30 p-10 rounded-xl w-[420px] shadow-2xl">
 
-      <br/><br/>
+        <h2 className="text-3xl font-bold mb-6 text-center text-cyan-400">
+          🔐 Secure Gateway
+        </h2>
 
-      <button onClick={registerUser}>
-        Register
-      </button>
+        <p className="text-center text-gray-400 mb-6 text-sm">
+          Zero‑Trust Authentication Portal
+        </p>
 
-      <br/><br/>
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={(e)=>setUsername(e.target.value)}
+          className="w-full mb-4 px-4 py-3 rounded bg-black/40 border border-cyan-700 focus:outline-none focus:border-cyan-400"
+        />
 
-      <button onClick={startAuth}>
-        Login
-      </button>
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e)=>setPassword(e.target.value)}
+          className="w-full mb-6 px-4 py-3 rounded bg-black/40 border border-cyan-700 focus:outline-none focus:border-cyan-400"
+        />
 
-      <br/><br/>
+        <button
+          onClick={startAuth}
+          disabled={loading}
+          className="w-full bg-cyan-500 hover:bg-cyan-600 py-3 rounded mb-4 font-semibold transition-all duration-300 shadow-lg shadow-cyan-500/30"
+        >
+          {loading ? "Authenticating..." : "Secure Login"}
+        </button>
 
-      <button onClick={accessAPI}>
-        Access Protected
-      </button>
+        <button
+          onClick={registerUser}
+          className="w-full bg-gray-700 hover:bg-gray-800 py-3 rounded mb-4"
+        >
+          Register User
+        </button>
 
-      <p>{status}</p>
+        <button
+          onClick={accessAPI}
+          className="w-full bg-green-600 hover:bg-green-700 py-3 rounded"
+        >
+          Access Protected API
+        </button>
+
+        <div className="mt-6 text-center text-xs text-gray-400">
+          {status}
+        </div>
+
+      </div>
 
     </div>
 

@@ -1,59 +1,83 @@
 import json
 import hashlib
 import base64
+import os
+
+from pymongo import MongoClient
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from dotenv import load_dotenv
 
-LOG_FILE = "logs/secure_audit.log"
-AES_KEY_FILE = "keys/aes_key.bin"
+load_dotenv()
+
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGO_DB = os.getenv("MONGO_DB")
+MONGO_COLLECTION = os.getenv("MONGO_COLLECTION")
+
+AES_LOG_KEYS = os.getenv("AES_LOG_KEYS")
+AES_LOG_ACTIVE = os.getenv("AES_LOG_ACTIVE")
 
 
-def load_aes_key():
-    with open(AES_KEY_FILE, "rb") as f:
-        return f.read()
+def get_aes_key():
+
+    keys = {}
+
+    for item in AES_LOG_KEYS.split(","):
+        version, key = item.split(":")
+        keys[version] = base64.b64decode(key)
+
+    return keys[AES_LOG_ACTIVE]
 
 
 def decrypt_logs():
-    aesgcm = AESGCM(load_aes_key())
 
-    prev_hash = "0" * 64
+    aesgcm = AESGCM(get_aes_key())
+
+    client = MongoClient(MONGODB_URI)
+    db = client[MONGO_DB]
+    collection = db[MONGO_COLLECTION]
+
+    prev_hash = "GENESIS"
     tamper_detected = False
     total_logs = 0
 
-    with open(LOG_FILE, "r") as f:
-        for idx, line in enumerate(f, start=1):
-            total_logs += 1
+    logs = collection.find().sort("created_at", 1)
 
-            record = json.loads(line)
+    for idx, record in enumerate(logs, start=1):
 
-            nonce = base64.b64decode(record["nonce"])
-            ciphertext = base64.b64decode(record["ciphertext"])
-            stored_hash = record["hash"]
+        total_logs += 1
 
-            try:
-                plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-            except Exception as e:
-                print(f"\n Log #{idx} decryption failed:", e)
-                tamper_detected = True
-                break
+        enc = record["enc"]
 
-            log_entry = json.loads(plaintext.decode())
+        nonce = base64.b64decode(enc["nonce"])
+        ciphertext = base64.b64decode(enc["ciphertext"])
 
-            computed_hash = hashlib.sha256(
-                json.dumps(log_entry, sort_keys=True).encode()
-            ).hexdigest()
+        stored_hash = record["hash"]
 
-            hash_valid = computed_hash == stored_hash
-            chain_valid = log_entry.get("prev_hash") == prev_hash
+        try:
+            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+        except Exception as e:
+            print(f"\n❌ Log #{idx} decryption failed:", e)
+            tamper_detected = True
+            break
 
-            if not hash_valid or not chain_valid:
-                tamper_detected = True
+        log_entry = json.loads(plaintext.decode())
 
-            print(f"\n🔎 Log #{idx}")
-            print("Entry:", log_entry)
-            print("Hash Valid:", hash_valid)
-            print("Chain Valid:", chain_valid)
+        computed_hash = hashlib.sha256(
+            json.dumps(log_entry, sort_keys=True).encode()
+        ).hexdigest()
 
-            prev_hash = stored_hash
+        hash_valid = computed_hash == stored_hash
+        chain_valid = record.get("prev_hash") == prev_hash
+
+        if not hash_valid or not chain_valid:
+            tamper_detected = True
+
+        print("\n🔎 Log #", idx)
+        print(json.dumps(log_entry, indent=2))
+        print("Hash Valid:", hash_valid)
+        print("Chain Valid:", chain_valid)
+
+        prev_hash = stored_hash
 
     print("\n==============================")
     print("Logs processed:", total_logs)

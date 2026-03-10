@@ -18,12 +18,14 @@ def generate_token(user_id, device_id, public_key):
     with open(PRIVATE_KEY_PATH, "rb") as f:
         private_key = f.read()
 
+    role = "admin" if user_id == "admin" else "user"
+
     payload = {
         "sub": user_id,
         "device_id": device_id,
+        "role": role,
         "iat": datetime.utcnow(),
-        # 🔐 Short‑lived token (2 minutes)
-        "exp": datetime.utcnow() + timedelta(minutes=1),
+        "exp": datetime.utcnow() + timedelta(minutes=2),
         "jti": str(uuid.uuid4()),
         "cnf": {
             "pk": public_key

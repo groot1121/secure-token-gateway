@@ -12,6 +12,7 @@ import EscalationTimeline from "../components/EscalationTimeline";
 import LogChainVisualizer from "../components/LogChainVisualizer";
 import ExecutiveToggle from "../components/ExecutiveToggle";
 import RealAttackMap from "../components/RealAttackMap";
+
 import AttackGlobe from "./AttackGlobe";
 import AnimatedAttackLines from "./AnimatedAttackLines";
 import AIThreatPrediction from "./AIThreatPrediction";
@@ -20,6 +21,7 @@ import ThreatCluster from "./ThreatCluster";
 import PulsingAttackHeatmap from "./PulsingAttackHeatmap";
 
 export default function Dashboard() {
+
   const [logs, setLogs] = useState([]);
   const [threatLevel, setThreatLevel] = useState("NORMAL");
   const [riskScore, setRiskScore] = useState(0);
@@ -28,78 +30,140 @@ export default function Dashboard() {
 
   const wsRef = useRef(null);
 
+  // =========================
+  // WEBSOCKET LIVE FEED
+  // =========================
+
   useEffect(() => {
+
     let ws;
 
     const connect = () => {
+
       ws = new WebSocket("ws://localhost:8000/ws/audit");
+
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        console.log("✅ SOC websocket connected");
+      };
+
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
 
-        setLogs((prev) => [data, ...prev].slice(0, 500));
+        try {
 
-        if (data.global_threat) {
-          setThreatLevel(data.global_threat);
+          const data = JSON.parse(event.data);
+
+          setLogs(prev => [data, ...prev].slice(0, 500));
+
+          if (data.global_threat) {
+            setThreatLevel(data.global_threat);
+          }
+
+          if (typeof data.global_risk === "number") {
+
+            setRiskScore(data.global_risk);
+
+            setRiskHistory(prev => [
+              ...prev.slice(-50),
+              { time: Date.now(), value: data.global_risk }
+            ]);
+
+          }
+
+        } catch(err){
+          console.error("WebSocket parse error", err);
         }
 
-        if (typeof data.global_risk === "number") {
-          setRiskScore(data.global_risk);
+      };
 
-          setRiskHistory((prev) => [
-            ...prev.slice(-50),
-            { time: Date.now(), value: data.global_risk },
-          ]);
-        }
+      ws.onerror = (err) => {
+        console.warn("WebSocket error", err);
       };
 
       ws.onclose = () => {
+
+        console.warn("WebSocket disconnected. Reconnecting in 2s...");
+
         setTimeout(connect, 2000);
+
       };
+
     };
 
     connect();
 
-    return () => ws.close();
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
+
   }, []);
 
+  // =========================
+  // DEVICE AGGREGATION
+  // =========================
+
   const devices = useMemo(() => {
-    const map = {};
+
+    const map = new Map();
 
     logs.forEach((log) => {
+
       if (!log.user_id || log.user_id === "SYSTEM") return;
 
       const key = `${log.user_id}-${log.device_id}`;
 
-      map[key] = {
+      map.set(key, {
         user_id: log.user_id,
         device_id: log.device_id,
         risk_score: log.device_risk || 0,
         threat_level: log.device_threat || "NORMAL",
         status:
-          log.status === "DEVICE_QUARANTINED" ? "QUARANTINED" : "ACTIVE",
-      };
+          log.status === "DEVICE_QUARANTINED"
+            ? "QUARANTINED"
+            : "ACTIVE",
+      });
+
     });
 
-    return Object.values(map);
+    return Array.from(map.values());
+
   }, [logs]);
 
+  // =========================
+  // STATS
+  // =========================
+
   const stats = {
+
     devices: devices.length,
-    tokensIssued: logs.filter((l) => l.action === "ISSUE_TOKEN").length,
-    replayAttacks: logs.filter((l) => l.status === "REPLAY_JTI").length,
+
+    tokensIssued: logs.filter(
+      (l) => l.action === "ISSUE_TOKEN"
+    ).length,
+
+    replayAttacks: logs.filter(
+      (l) => l.status === "REPLAY_JTI"
+    ).length
+
   };
 
+  // =========================
+  // UI
+  // =========================
+
   return (
+
     <div className="min-h-screen bg-[#050816] text-white p-6">
 
       <div className="flex justify-between items-center mb-6">
+
         <h1 className="text-3xl font-bold tracking-widest">
           🛡 Secure Token Gateway SOC
         </h1>
 
         <ExecutiveToggle mode={mode} setMode={setMode} />
+
       </div>
 
       <ThreatMeter level={threatLevel} score={riskScore} />
@@ -109,33 +173,50 @@ export default function Dashboard() {
       <EscalationTimeline logs={logs} />
 
       {mode === "EXECUTIVE" ? (
+
         <>
 
+          {/* 🌍 3D Attack Globe */}
           <AttackGlobe logs={logs} />
+
           <div className="grid grid-cols-2 gap-6 mt-6">
-              <AnimatedAttackLines logs={logs} />
-              <AIThreatPrediction logs={logs} />
-        </div>
+
+            <AnimatedAttackLines logs={logs} />
+
+            <AIThreatPrediction logs={logs} />
+
+          </div>
+
+          <RealAttackMap logs={logs} threatLevel={threatLevel} />
+          
           <NetworkTopology threatLevel={threatLevel} />
+
           <RiskChart riskHistory={riskHistory} />
+
           <AIRiskPrediction riskHistory={riskHistory} />
 
           <ThreatCluster logs={logs} />
 
           <PulsingAttackHeatmap logs={logs} />
 
-
           <AttackBreakdown logs={logs} />
+
         </>
+
       ) : (
+
         <>
           <DeviceTable devices={devices} />
           <LogChainVisualizer logs={logs} />
           <AuditFeed logs={logs} />
         </>
+
       )}
 
       <ControlPanel />
+
     </div>
+
   );
+
 }

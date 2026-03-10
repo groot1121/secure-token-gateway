@@ -27,20 +27,17 @@ public_pem = public_key.public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo
 ).decode()
 
-# ================= HELPER SIGN FUNCTION =================
+# ================= SIGN FUNCTION =================
 
 def sign(message: bytes):
 
-    sig = private_key.sign(
+    signature = private_key.sign(
         message,
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
-        ),
+        padding.PKCS1v15(),   # 🔥 MUST MATCH SERVER
         hashes.SHA256()
     )
 
-    return base64.b64encode(sig).decode()
+    return base64.b64encode(signature).decode()
 
 # ================= REGISTER DEVICE =================
 
@@ -57,7 +54,7 @@ r = requests.post(
 
 print(r.status_code, r.text)
 
-# ================= CHALLENGE =================
+# ================= REQUEST CHALLENGE =================
 
 print("\n2️⃣ Requesting challenge...")
 
@@ -70,9 +67,13 @@ r = requests.post(
 )
 
 challenge = r.json()["challenge"]
+
+print("Challenge received")
+
+# decode nonce
 raw_nonce = base64.b64decode(challenge)
 
-# ================= VERIFY =================
+# ================= VERIFY CHALLENGE =================
 
 print("\n3️⃣ Verifying challenge...")
 
@@ -89,6 +90,10 @@ r = requests.post(
 
 print(r.status_code, r.text)
 
+if r.status_code != 200:
+    print("❌ Challenge verification failed")
+    exit()
+
 # ================= ISSUE TOKEN =================
 
 print("\n4️⃣ Issuing token...")
@@ -102,20 +107,26 @@ r = requests.post(
 )
 
 token = r.json()["access_token"]
+
 print("Token issued")
 
-# Decode JWT
+# ================= DECODE JWT =================
+
 payload_part = token.split(".")[1]
 payload_json = base64.urlsafe_b64decode(payload_part + "===").decode()
+
 payload = json.loads(payload_json)
 
 jti = payload["jti"]
+
+print("Token JTI:", jti)
 
 # ================= ACCESS TEST =================
 
 print("\n5️⃣ Accessing protected endpoint")
 
 message = f"ACCESS:{jti}".encode()
+
 signature = sign(message)
 
 r = requests.get(
@@ -133,6 +144,7 @@ print(r.status_code, r.text)
 print("\n6️⃣ Rotating token")
 
 rotate_msg = f"ROTATE:{jti}".encode()
+
 rotate_sig = sign(rotate_msg)
 
 r = requests.post(
@@ -151,6 +163,7 @@ if r.status_code == 200:
 
     payload_part = token.split(".")[1]
     payload_json = base64.urlsafe_b64decode(payload_part + "===").decode()
+
     payload = json.loads(payload_json)
 
     jti = payload["jti"]
@@ -164,6 +177,7 @@ print("\n7️⃣ Normal access (should succeed)")
 for i in range(3):
 
     message = f"ACCESS:{jti}".encode()
+
     signature = sign(message)
 
     r = requests.get(
@@ -174,7 +188,7 @@ for i in range(3):
         }
     )
 
-    print(f"Access {i+1}:", r.status_code, r.text)
+    print(f"Access {i+1}:", r.status_code)
 
     time.sleep(1)
 
@@ -183,6 +197,7 @@ for i in range(3):
 print("\n8️⃣ Triggering replay flood attack")
 
 message = f"ACCESS:{jti}".encode()
+
 signature = sign(message)
 
 for i in range(15):
@@ -195,6 +210,8 @@ for i in range(15):
         }
     )
 
-    print(f"Replay {i+1}:", r.status_code, r.text)
+    print(f"Replay {i+1}:", r.status_code)
 
     time.sleep(0.2)
+
+print("\n✅ Attack simulation complete")
