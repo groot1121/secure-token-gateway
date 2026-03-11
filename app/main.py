@@ -24,8 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from app.rate_limit import limiter
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.replay_guard import check_and_mark_jti, check_and_mark_signature
 from app.auth_utils import generate_token, verify_jwt, verify_pop_signature
@@ -58,7 +58,7 @@ users_collection = mongo_db["users"]
 # ================= REDIS =================
 
 redis_client = redis.Redis(
-    host="localhost",
+    host="secure-redis",
     port=6379,
     db=0,
     decode_responses=True
@@ -101,6 +101,9 @@ app = FastAPI(title="Secure Token Gateway SOC")
 security = HTTPBearer()
 app.include_router(admin_router)
 
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 # ================= WEBSOCKET =================
 
 active_connections: List[WebSocket] = []
@@ -173,7 +176,6 @@ async def periodic_risk_broadcast():
 # ================= RATE LIMIT =================
 
 app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
 
 @app.exception_handler(RateLimitExceeded)
 def rate_limit_handler(request, exc):
@@ -259,7 +261,7 @@ async def register_user(data: RegisterUser):
     if existing:
         raise HTTPException(400, "User already exists")
 
-    hashed = bcrypt.hash(data.password)
+    hashed = bcrypt.hash(data.password[:72])
 
     users_collection.insert_one({
         "username": data.username,
@@ -283,7 +285,7 @@ async def login(data: LoginRequest):
     if not user:
         raise HTTPException(401, "Invalid credentials")
 
-    if not bcrypt.verify(data.password, user["password"]):
+    if not bcrypt.verify(data.password[:72], user["password"]):
         raise HTTPException(401, "Invalid credentials")
 
     return {"message": "Login success"}

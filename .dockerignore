@@ -1,0 +1,10 @@
+.git
+.gitignore
+node_modules
+dist
+__pycache__
+*.pyc
+*.log
+.env
+frontend/secure-token-frontend/node_modules
+frontend/secure-token-frontend/dist
