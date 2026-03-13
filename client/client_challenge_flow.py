@@ -33,7 +33,7 @@ def sign(message: bytes):
 
     signature = private_key.sign(
         message,
-        padding.PKCS1v15(),   # 🔥 MUST MATCH SERVER
+        padding.PKCS1v15(),  # IMPORTANT FIX
         hashes.SHA256()
     )
 
@@ -54,7 +54,7 @@ r = requests.post(
 
 print(r.status_code, r.text)
 
-# ================= REQUEST CHALLENGE =================
+# ================= CHALLENGE =================
 
 print("\n2️⃣ Requesting challenge...")
 
@@ -67,13 +67,9 @@ r = requests.post(
 )
 
 challenge = r.json()["challenge"]
-
-print("Challenge received")
-
-# decode nonce
 raw_nonce = base64.b64decode(challenge)
 
-# ================= VERIFY CHALLENGE =================
+# ================= VERIFY =================
 
 print("\n3️⃣ Verifying challenge...")
 
@@ -106,27 +102,31 @@ r = requests.post(
     }
 )
 
-token = r.json()["access_token"]
+print("Server response:", r.status_code, r.text)
 
-print("Token issued")
+try:
+    data = r.json()
+except:
+    print("❌ Server returned non‑JSON response")
+    exit()
 
-# ================= DECODE JWT =================
+if "access_token" not in data:
+    print("❌ Token issue failed:", data)
+    exit()
+token = data["access_token"]
+print("✅ Token issued")
 
 payload_part = token.split(".")[1]
 payload_json = base64.urlsafe_b64decode(payload_part + "===").decode()
-
 payload = json.loads(payload_json)
 
 jti = payload["jti"]
-
-print("Token JTI:", jti)
 
 # ================= ACCESS TEST =================
 
 print("\n5️⃣ Accessing protected endpoint")
 
 message = f"ACCESS:{jti}".encode()
-
 signature = sign(message)
 
 r = requests.get(
@@ -144,7 +144,6 @@ print(r.status_code, r.text)
 print("\n6️⃣ Rotating token")
 
 rotate_msg = f"ROTATE:{jti}".encode()
-
 rotate_sig = sign(rotate_msg)
 
 r = requests.post(
@@ -163,21 +162,19 @@ if r.status_code == 200:
 
     payload_part = token.split(".")[1]
     payload_json = base64.urlsafe_b64decode(payload_part + "===").decode()
-
     payload = json.loads(payload_json)
 
     jti = payload["jti"]
 
-    print("New token received")
+    print("✅ New token received")
 
 # ================= NORMAL ACCESS LOOP =================
 
-print("\n7️⃣ Normal access (should succeed)")
+print("\n7️⃣ Normal access")
 
 for i in range(3):
 
     message = f"ACCESS:{jti}".encode()
-
     signature = sign(message)
 
     r = requests.get(
@@ -197,7 +194,6 @@ for i in range(3):
 print("\n8️⃣ Triggering replay flood attack")
 
 message = f"ACCESS:{jti}".encode()
-
 signature = sign(message)
 
 for i in range(15):
@@ -213,5 +209,3 @@ for i in range(15):
     print(f"Replay {i+1}:", r.status_code)
 
     time.sleep(0.2)
-
-print("\n✅ Attack simulation complete")

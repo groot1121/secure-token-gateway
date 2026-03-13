@@ -1,3 +1,5 @@
+import sys
+
 from dotenv import load_dotenv
 load_dotenv()
 import json
@@ -67,8 +69,8 @@ redis_client = redis.Redis(
 
 # ==================Dynamic rotation==================
 
-ROTATION_MIN = 10   # 3 minutes
-ROTATION_MAX = 15   # 5 minutes
+ROTATION_MIN = 5  # 1 minutes
+ROTATION_MAX = 10   # 2 minutes
 
 # ================= DEVICE QUARANTINE =================
 
@@ -123,7 +125,7 @@ async def broadcast_log(log_data: dict):
     disconnected = []
     for connection in active_connections:
         try:
-            await connection.send_text(json.dumps(log_data))
+            await connection.send_json(log_data)
         except Exception:
             disconnected.append(connection)
 
@@ -312,11 +314,14 @@ async def challenge(user_id: str, device_id: str):
     )
 
     await log_and_broadcast(
-        user_id,
-        device_id,
-        "CHALLENGE_ISSUED",
-        "SUCCESS"
-    )
+    user_id,
+    device_id,
+    "CHALLENGE_ISSUED",
+    "SUCCESS",
+    payload={
+        "nonce": nonce_b64
+    }
+)
 
     return {"challenge": nonce_b64}
 
@@ -366,7 +371,10 @@ async def verify_challenge(data: VerifyRequest):
         data.user_id,
         data.device_id,
         "CHALLENGE_VERIFIED",
-        "SUCCESS"
+        "SUCCESS",
+        payload={
+            "signature": data.signature
+        }
     )
 
     return {"status": "verified"}
@@ -426,7 +434,15 @@ async def issue_token(user_id: str, device_id: str):
 )
     redis_client.delete(f"verified:{user_id}:{device_id}")
 
-    await log_and_broadcast(user_id, device_id, "ISSUE_TOKEN", "SUCCESS")
+    await log_and_broadcast(
+    user_id,
+    device_id,
+    "ISSUE_TOKEN",
+    "SUCCESS",
+    payload={
+        "jti": payload["jti"]
+    }
+)
 
     return {"access_token": token}
 
@@ -675,11 +691,15 @@ async def rotate_token(
     )
 
     await log_and_broadcast(
-        user_id,
-        device_id,
-        "TOKEN_ROTATED",
-        "SUCCESS"
-    )
+    user_id,
+    device_id,
+    "TOKEN_ROTATED",
+    "SUCCESS",
+    payload={
+        "old_jti": jti,
+        "new_jti": new_payload["jti"]
+    }
+)
 
     return {"access_token": new_token}
 
@@ -771,3 +791,33 @@ async def register_user(data: LoginRequest):
         raise HTTPException(400, "User already exists")
 
     return {"status": "created"}
+
+import subprocess
+import sys
+@app.post("/admin/simulate/{attack_type}")
+async def simulate_attack(attack_type: str):
+
+    scripts = {
+        "stolen": os.path.join("client","simulate_stolen_token.py"),
+        "replay": os.path.join("client","simulate_replay_attack.py"),
+        "suspicious": os.path.join("client","simulate_suspicious_device.py"),
+        "bruteforce": os.path.join("client","simulate_bruteforce.py"),
+        "global": os.path.join("client","simulate_global_attack.py")
+        
+    }
+
+    script = scripts.get(attack_type)
+
+    if not script:
+        raise HTTPException(400, "Unknown attack")
+
+    await log_and_broadcast(
+        "SYSTEM",
+        "SOC",
+        "ATTACK_SIMULATION",
+        attack_type.upper()
+    )
+
+    subprocess.Popen([sys.executable, script])
+
+    return {"status": f"{attack_type} attack started"}
