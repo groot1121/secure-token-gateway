@@ -21,7 +21,7 @@ import axios from "axios";
 
 const API = "http://127.0.0.1:8000";
 
-export default function UserAuthPage() {
+export default function UserAuthPage(){
 
   const [username,setUsername] = useState("");
   const [password,setPassword] = useState("");
@@ -34,7 +34,8 @@ export default function UserAuthPage() {
   const [device] = useState("device-" + crypto.randomUUID());
 
   // 🔁 AUTO TOKEN ROTATION
-  useAutoRotate(token, privateKey, setToken);
+  useAutoRotate(token,privateKey,setToken);
+
 
   // =========================
   // REGISTER USER
@@ -61,6 +62,7 @@ export default function UserAuthPage() {
 
   }
 
+
   // =========================
   // LOGIN + WEBCRYPTO FLOW
   // =========================
@@ -76,27 +78,63 @@ export default function UserAuthPage() {
         password
       });
 
+      // --------------------------
+      // GENERATE DEVICE KEYS
+      // --------------------------
+
       setStatus("Generating device keys...");
 
       const keyPair = await generateKeyPair();
-      setPrivateKey(keyPair.privateKey);
 
-      const publicKeyPem = await exportPublicKey(keyPair.publicKey);
+      setPrivateKey(keyPair.privateKey);
+      sessionStorage.setItem(
+  "privateKey",
+  JSON.stringify(await crypto.subtle.exportKey("jwk", keyPair.privateKey))
+);
+      const publicKeyPem = await exportPublicKey(
+        keyPair.publicKey
+      );
+
+
+      // --------------------------
+      // REGISTER DEVICE
+      // --------------------------
 
       setStatus("Registering device...");
 
-      await registerDevice(username, device, publicKeyPem);
+      await registerDevice(
+        username,
+        device,
+        publicKeyPem
+      );
+
+
+      // --------------------------
+      // REQUEST CHALLENGE
+      // --------------------------
 
       setStatus("Requesting challenge...");
 
-      const challengeRes = await requestChallenge(username, device);
+      const challengeRes = await requestChallenge(
+        username,
+        device
+      );
 
       const challenge =
-        challengeRes.data?.challenge || challengeRes.challenge;
+        challengeRes.data?.challenge ||
+        challengeRes.challenge;
 
       if(!challenge){
         throw new Error("Challenge not received from server");
       }
+
+      // store nonce for dashboard
+      localStorage.setItem("challenge_nonce",challenge);
+
+
+      // --------------------------
+      // SIGN CHALLENGE
+      // --------------------------
 
       const rawBytes = Uint8Array.from(
         atob(challenge),
@@ -110,30 +148,70 @@ export default function UserAuthPage() {
         rawBytes
       );
 
+      // store signature for dashboard
+      // localStorage.setItem("signature_output",signature);
+      localStorage.setItem(
+  "signature_output",
+  typeof signature === "string"
+    ? signature
+    : btoa(String.fromCharCode(...new Uint8Array(signature)))
+);
+
+
+      // --------------------------
+      // VERIFY CHALLENGE
+      // --------------------------
+
       setStatus("Verifying challenge...");
 
-      await verifyChallenge(username, device, signature);
+      await verifyChallenge(
+        username,
+        device,
+        signature
+      );
+
+
+      // --------------------------
+      // ISSUE TOKEN
+      // --------------------------
 
       setStatus("Issuing token...");
 
-      const tokenRes = await issueToken(username, device);
+      const tokenRes = await issueToken(
+        username,
+        device
+      );
 
       const newToken =
-        tokenRes.data?.access_token || tokenRes.access_token;
+        tokenRes.data?.access_token ||
+        tokenRes.access_token;
 
       setToken(newToken);
+      localStorage.setItem("access_token", newToken);
 
-      setStatus("Login successful");
+// store token for dashboard inspector
+localStorage.setItem("access_token",newToken);
+localStorage.setItem("user",username);
 
+setStatus("Login successful");
+
+// 🔴 REDIRECT AFTER AUTH
+if(username === "admin"){
+  window.location.href="/dashboard";
+}else{
+  window.location.href="/welcome";
+}
     }
     catch(err){
 
       console.error(err);
+
       setStatus("Authentication failed");
 
     }
 
   }
+
 
   // =========================
   // ACCESS PROTECTED API
@@ -144,17 +222,28 @@ export default function UserAuthPage() {
     try{
 
       if(!token){
+
         setStatus("Token missing");
+
         return;
+
       }
 
-      const payload = JSON.parse(atob(token.split(".")[1]));
+      const payload = JSON.parse(
+        atob(token.split(".")[1])
+      );
 
       const message = `ACCESS:${payload.jti}`;
 
-      const signature = await signText(privateKey,message);
+      const signature = await signText(
+        privateKey,
+        message
+      );
 
-      const res = await accessProtected(token,signature);
+      const res = await accessProtected(
+        token,
+        signature
+      );
 
       setStatus(res.data.message);
 
@@ -169,13 +258,17 @@ export default function UserAuthPage() {
 
   }
 
+
   // =========================
   // UI
   // =========================
 
   return(
 
-    <div style={{padding:"40px"}}>
+    <div style={{
+      padding:"40px",
+      fontFamily:"monospace"
+    }}>
 
       <h2>Secure Gateway Login</h2>
 
@@ -212,7 +305,9 @@ export default function UserAuthPage() {
         Access Protected
       </button>
 
-      <p>{status}</p>
+      <br/><br/>
+
+      <p>Status: {status}</p>
 
     </div>
 

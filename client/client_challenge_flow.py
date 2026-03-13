@@ -27,20 +27,17 @@ public_pem = public_key.public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo
 ).decode()
 
-# ================= HELPER SIGN FUNCTION =================
+# ================= SIGN FUNCTION =================
 
 def sign(message: bytes):
 
-    sig = private_key.sign(
+    signature = private_key.sign(
         message,
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
-        ),
+        padding.PKCS1v15(),  # IMPORTANT FIX
         hashes.SHA256()
     )
 
-    return base64.b64encode(sig).decode()
+    return base64.b64encode(signature).decode()
 
 # ================= REGISTER DEVICE =================
 
@@ -89,6 +86,10 @@ r = requests.post(
 
 print(r.status_code, r.text)
 
+if r.status_code != 200:
+    print("❌ Challenge verification failed")
+    exit()
+
 # ================= ISSUE TOKEN =================
 
 print("\n4️⃣ Issuing token...")
@@ -101,10 +102,20 @@ r = requests.post(
     }
 )
 
-token = r.json()["access_token"]
-print("Token issued")
+print("Server response:", r.status_code, r.text)
 
-# Decode JWT
+try:
+    data = r.json()
+except:
+    print("❌ Server returned non‑JSON response")
+    exit()
+
+if "access_token" not in data:
+    print("❌ Token issue failed:", data)
+    exit()
+token = data["access_token"]
+print("✅ Token issued")
+
 payload_part = token.split(".")[1]
 payload_json = base64.urlsafe_b64decode(payload_part + "===").decode()
 payload = json.loads(payload_json)
@@ -155,11 +166,11 @@ if r.status_code == 200:
 
     jti = payload["jti"]
 
-    print("New token received")
+    print("✅ New token received")
 
 # ================= NORMAL ACCESS LOOP =================
 
-print("\n7️⃣ Normal access (should succeed)")
+print("\n7️⃣ Normal access")
 
 for i in range(3):
 
@@ -174,7 +185,7 @@ for i in range(3):
         }
     )
 
-    print(f"Access {i+1}:", r.status_code, r.text)
+    print(f"Access {i+1}:", r.status_code)
 
     time.sleep(1)
 
@@ -195,6 +206,6 @@ for i in range(15):
         }
     )
 
-    print(f"Replay {i+1}:", r.status_code, r.text)
+    print(f"Replay {i+1}:", r.status_code)
 
     time.sleep(0.2)

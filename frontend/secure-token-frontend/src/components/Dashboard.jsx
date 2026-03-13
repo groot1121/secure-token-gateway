@@ -11,7 +11,6 @@ import AttackBreakdown from "../components/AttackBreakdown";
 import EscalationTimeline from "../components/EscalationTimeline";
 import LogChainVisualizer from "../components/LogChainVisualizer";
 import ExecutiveToggle from "../components/ExecutiveToggle";
-import RealAttackMap from "../components/RealAttackMap";
 import AttackGlobe from "./AttackGlobe";
 import AnimatedAttackLines from "./AnimatedAttackLines";
 import AIThreatPrediction from "./AIThreatPrediction";
@@ -19,7 +18,10 @@ import AIRiskPrediction from "./AIRiskPrediction";
 import ThreatCluster from "./ThreatCluster";
 import PulsingAttackHeatmap from "./PulsingAttackHeatmap";
 
+const API = "http://localhost:8000";
+
 export default function Dashboard() {
+
   const [logs, setLogs] = useState([]);
   const [threatLevel, setThreatLevel] = useState("NORMAL");
   const [riskScore, setRiskScore] = useState(0);
@@ -28,79 +30,191 @@ export default function Dashboard() {
 
   const wsRef = useRef(null);
 
+  /* ================================
+     WebSocket Connection
+  ================================= */
+
   useEffect(() => {
-    let ws;
 
     const connect = () => {
-      ws = new WebSocket("ws://localhost:8000/ws/audit");
+
+      const ws = new WebSocket(`${API.replace("http","ws")}/ws/audit`);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
+
         const data = JSON.parse(event.data);
 
-        setLogs((prev) => [data, ...prev].slice(0, 500));
+        setLogs(prev => [data, ...prev].slice(0, 500));
 
         if (data.global_threat) {
           setThreatLevel(data.global_threat);
         }
 
         if (typeof data.global_risk === "number") {
+
           setRiskScore(data.global_risk);
 
-          setRiskHistory((prev) => [
+          setRiskHistory(prev => [
             ...prev.slice(-50),
-            { time: Date.now(), value: data.global_risk },
+            {
+              time: Date.now(),
+              value: data.global_risk
+            }
           ]);
+
         }
+
       };
 
       ws.onclose = () => {
         setTimeout(connect, 2000);
       };
+
     };
 
     connect();
 
-    return () => ws.close();
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
+
   }, []);
 
+  /* ================================
+     Device Aggregation
+  ================================= */
+
   const devices = useMemo(() => {
+
     const map = {};
 
-    logs.forEach((log) => {
+    logs.forEach(log => {
+
       if (!log.user_id || log.user_id === "SYSTEM") return;
 
       const key = `${log.user_id}-${log.device_id}`;
 
       map[key] = {
+
         user_id: log.user_id,
         device_id: log.device_id,
         risk_score: log.device_risk || 0,
         threat_level: log.device_threat || "NORMAL",
         status:
-          log.status === "DEVICE_QUARANTINED" ? "QUARANTINED" : "ACTIVE",
+          log.status === "DEVICE_QUARANTINED"
+            ? "QUARANTINED"
+            : "ACTIVE"
+
       };
+
     });
 
     return Object.values(map);
+
   }, [logs]);
 
-  const stats = {
+  /* ================================
+     Statistics
+  ================================= */
+
+  const stats = useMemo(() => ({
+
     devices: devices.length,
-    tokensIssued: logs.filter((l) => l.action === "ISSUE_TOKEN").length,
-    replayAttacks: logs.filter((l) => l.status === "REPLAY_JTI").length,
+
+    tokensIssued:
+      logs.filter(l => l.action === "ISSUE_TOKEN").length,
+
+    replayAttacks:
+      logs.filter(l => l.status === "REPLAY_JTI").length
+
+  }), [logs, devices]);
+
+  /* ================================
+     Attack Simulation
+  ================================= */
+
+  const runAttack = async (type) => {
+
+    try {
+
+      await fetch(`${API}/admin/simulate/${type}`, {
+        method: "POST"
+      });
+
+    } catch (err) {
+      console.error("Attack simulation failed", err);
+    }
+
   };
+const simulateAttack = async(type) => {
+
+  await fetch(`http://127.0.0.1:8000/admin/simulate/${type}`, {
+    method: "POST"
+  });
+
+};
+
+  /* ================================
+     UI
+  ================================= */
 
   return (
+
     <div className="min-h-screen bg-[#050816] text-white p-6">
 
+      {/* HEADER */}
+
       <div className="flex justify-between items-center mb-6">
+
         <h1 className="text-3xl font-bold tracking-widest">
           🛡 Secure Token Gateway SOC
         </h1>
 
         <ExecutiveToggle mode={mode} setMode={setMode} />
+
       </div>
+
+      {/* ATTACK CONTROLS */}
+
+      <div className="flex flex-wrap gap-4 mb-6">
+
+        <button
+          className="bg-red-600 px-4 py-2 rounded"
+          onClick={() => runAttack("stolen")}
+        >
+          Simulate Stolen Token
+        </button>
+
+        <button
+          className="bg-orange-600 px-4 py-2 rounded"
+          onClick={() => runAttack("replay")}
+        >
+          Simulate Replay Attack
+        </button>
+
+        <button
+          className="bg-yellow-600 px-4 py-2 rounded"
+          onClick={() => runAttack("suspicious")}
+        >
+          Simulate Suspicious Device
+        </button>
+
+        <button
+          className="bg-purple-600 px-4 py-2 rounded"
+          onClick={() => runAttack("bruteforce")}
+        >
+          Simulate Brute Force
+        </button>
+        <button
+          onClick={() => simulateAttack("global")}
+          className="bg-red-900 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold">
+        🌍 Simulate Global Attack
+      </button>
+
+      </div>
+
+      {/* THREAT OVERVIEW */}
 
       <ThreatMeter level={threatLevel} score={riskScore} />
 
@@ -108,34 +222,52 @@ export default function Dashboard() {
 
       <EscalationTimeline logs={logs} />
 
+      {/* EXECUTIVE VIEW */}
+
       {mode === "EXECUTIVE" ? (
+
         <>
 
           <AttackGlobe logs={logs} />
+
           <div className="grid grid-cols-2 gap-6 mt-6">
-              <AnimatedAttackLines logs={logs} />
-              <AIThreatPrediction logs={logs} />
-        </div>
+
+            <AnimatedAttackLines logs={logs} />
+
+            <AIThreatPrediction logs={logs} />
+
+          </div>
+
           <NetworkTopology threatLevel={threatLevel} />
+
           <RiskChart riskHistory={riskHistory} />
+
           <AIRiskPrediction riskHistory={riskHistory} />
 
           <ThreatCluster logs={logs} />
 
           <PulsingAttackHeatmap logs={logs} />
 
-
           <AttackBreakdown logs={logs} />
+
         </>
+
       ) : (
+
         <>
           <DeviceTable devices={devices} />
           <LogChainVisualizer logs={logs} />
           <AuditFeed logs={logs} />
         </>
+
       )}
 
+      {/* CONTROL PANEL */}
+
       <ControlPanel />
+
     </div>
+
   );
+
 }
