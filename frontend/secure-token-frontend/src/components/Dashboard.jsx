@@ -155,6 +155,7 @@ const simulateAttack = async(type) => {
 
 };
 
+
   /* ================================
      UI
   ================================= */
@@ -162,14 +163,33 @@ const simulateAttack = async(type) => {
   return (
 
     <div className="min-h-screen bg-[#050816] text-white p-6">
+      <div className="background-shapes"></div>
 
       {/* HEADER */}
 
       <div className="flex justify-between items-center mb-6">
 
-        <h1 className="text-3xl font-bold tracking-widest">
-          🛡 Secure Token Gateway SOC
-        </h1>
+        <div className="flex flex-col">
+  
+  <h1 className="
+  text-3xl md:text-4xl 
+  font-extrabold 
+  tracking-wide 
+  text-cyan-400 
+  drop-shadow-lg
+  ">
+    🛡 Zero‑Day Secure Token Gateway SOC
+  </h1>
+
+  <p className="
+  text-sm 
+  text-gray-400 
+  tracking-wider 
+  mt-1">
+    Cryptographically Secured Access Token System for Zero‑Day Attack Prevention
+  </p>
+
+</div>
 
         <ExecutiveToggle mode={mode} setMode={setMode} />
 
@@ -180,37 +200,39 @@ const simulateAttack = async(type) => {
       <div className="flex flex-wrap gap-4 mb-6">
 
         <button
-          className="bg-red-600 px-4 py-2 rounded"
-          onClick={() => runAttack("stolen")}
-        >
-          Simulate Stolen Token
-        </button>
+  className="cyber-btn red"
+  onClick={() => runAttack("stolen")}
+>
+  Simulate Stolen Token
+</button>
 
-        <button
-          className="bg-orange-600 px-4 py-2 rounded"
-          onClick={() => runAttack("replay")}
-        >
-          Simulate Replay Attack
-        </button>
+<button
+  className="cyber-btn orange"
+  onClick={() => runAttack("replay")}
+>
+  Simulate Replay Attack
+</button>
 
-        <button
-          className="bg-yellow-600 px-4 py-2 rounded"
-          onClick={() => runAttack("suspicious")}
-        >
-          Simulate Suspicious Device
-        </button>
+<button
+  className="cyber-btn yellow"
+  onClick={() => runAttack("suspicious")}
+>
+  Simulate Suspicious Device
+</button>
 
-        <button
-          className="bg-purple-600 px-4 py-2 rounded"
-          onClick={() => runAttack("bruteforce")}
-        >
-          Simulate Brute Force
-        </button>
-        <button
-          onClick={() => simulateAttack("global")}
-          className="bg-red-900 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold">
-        🌍 Simulate Global Attack
-      </button>
+<button
+  className="cyber-btn purple"
+  onClick={() => runAttack("bruteforce")}
+>
+  Simulate Brute Force
+</button>
+
+<button
+  className="cyber-btn globe"
+  onClick={() => simulateAttack("global")}
+>
+  🌍 Simulate Global Attack
+</button>
 
       </div>
 
@@ -228,21 +250,21 @@ const simulateAttack = async(type) => {
 
         <>
 
-          <AttackGlobe logs={logs} />
+          {/* <AttackGlobe logs={logs} /> */}
 
-          <div className="grid grid-cols-2 gap-6 mt-6">
+          {/* <div className="grid grid-cols-2 gap-6 mt-6">
 
             <AnimatedAttackLines logs={logs} />
 
             <AIThreatPrediction logs={logs} />
 
-          </div>
+          </div> */}
 
           <NetworkTopology threatLevel={threatLevel} />
 
           <RiskChart riskHistory={riskHistory} />
 
-          <AIRiskPrediction riskHistory={riskHistory} />
+          {/* <AIRiskPrediction riskHistory={riskHistory} /> */}
 
           <ThreatCluster logs={logs} />
 

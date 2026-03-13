@@ -91,7 +91,9 @@ export default function Welcome(){
 
       <div style={{display:"flex",justifyContent:"space-between"}}>
 
-        <h1>Welcome User</h1>
+        <h1>
+🛡 Cryptographically Secured Access Token System for Zero‑Day Attack Prevention
+</h1>
 
         <button
           onClick={logout}

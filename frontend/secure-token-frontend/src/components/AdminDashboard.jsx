@@ -287,7 +287,7 @@ export default function AdminDashboard() {
 
       <div className="title">
 
-        Secure Token Gateway SOC Dashboard
+        Cryptographically Secured Access Token System for Zero-Day Attack Prevention
 
         <div style={{ float: "right" }}>
 
@@ -296,7 +296,7 @@ export default function AdminDashboard() {
             style={{
               marginRight: "10px",
               padding: "6px 14px",
-              background: "#00ff9f",
+              background: "#0c1411",
               border: "none",
               borderRadius: "6px",
               cursor: "pointer"

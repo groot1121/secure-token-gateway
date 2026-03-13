@@ -60,7 +60,7 @@ users_collection = mongo_db["users"]
 # ================= REDIS =================
 
 redis_client = redis.Redis(
-    host="secure-redis",
+    host="localhost",
     port=6379,
     db=0,
     decode_responses=True
@@ -133,8 +133,24 @@ async def broadcast_log(log_data: dict):
         if conn in active_connections:
             active_connections.remove(conn)
 
-# ================= LOG + RISK =================
+# ================= GLOBAL RISK BROADCAST =================
 
+async def periodic_risk_broadcast():
+    while True:
+        await asyncio.sleep(1)
+
+        if active_connections:
+            await broadcast_log({
+                "user_id": "SYSTEM",
+                "device_id": "SYSTEM",
+                "action": "RISK_UPDATE",
+                "status": "INFO",
+                "global_risk": threat_engine.get_global_risk_score(),
+                "global_threat": threat_engine.get_global_threat_level(),
+            })
+
+
+# ================= LOG + RISK =================
 async def log_and_broadcast(user_id, device_id, action, status, payload=None):
     log_event(user_id, device_id, action, status, payload=payload)
 
@@ -159,21 +175,6 @@ async def log_and_broadcast(user_id, device_id, action, status, payload=None):
             "global_risk": threat_data["global_risk"],
             "global_threat": threat_data["global_threat"],
         })
-# ================= PERIODIC GLOBAL BROADCAST =================
-
-async def periodic_risk_broadcast():
-    while True:
-        await asyncio.sleep(1)
-
-        if active_connections:
-            await broadcast_log({
-                "user_id": "SYSTEM",
-                "device_id": "SYSTEM",
-                "action": "RISK_UPDATE",
-                "status": "INFO",
-                "global_risk": threat_engine.get_global_risk_score(),
-                "global_threat": threat_engine.get_global_threat_level(),
-            })
 
 # ================= RATE LIMIT =================
 
@@ -187,10 +188,14 @@ def rate_limit_handler(request, exc):
 
 @app.on_event("startup")
 async def startup():
+    print("🚀 Secure Token Gateway starting...")
+
     generate_rsa_keys()
+
     asyncio.create_task(threat_engine.risk_decay_loop())
     asyncio.create_task(periodic_risk_broadcast())
 
+    print("✅ Threat engine + risk broadcaster started")
 # ================= CORS =================
 
 app.add_middleware(
@@ -794,6 +799,7 @@ async def register_user(data: LoginRequest):
 
 import subprocess
 import sys
+
 @app.post("/admin/simulate/{attack_type}")
 async def simulate_attack(attack_type: str):
 
@@ -803,7 +809,6 @@ async def simulate_attack(attack_type: str):
         "suspicious": os.path.join("client","simulate_suspicious_device.py"),
         "bruteforce": os.path.join("client","simulate_bruteforce.py"),
         "global": os.path.join("client","simulate_global_attack.py")
-        
     }
 
     script = scripts.get(attack_type)
@@ -817,6 +822,26 @@ async def simulate_attack(attack_type: str):
         "ATTACK_SIMULATION",
         attack_type.upper()
     )
+
+    attack_events = [
+        ("LOGIN_ATTEMPT", "FAILED"),
+        ("TOKEN_REPLAY", "REPLAY_JTI"),
+        ("ACCESS_DENIED", "BAD_SIGNATURE"),
+        ("BRUTE_FORCE", "FAILED_LOGIN")
+    ]
+
+    for _ in range(50):
+
+        action, status = random.choice(attack_events)
+
+        await log_and_broadcast(
+            "ATTACKER",
+            f"bot-{random.randint(1000,9999)}",
+            action,
+            status
+        )
+
+        await asyncio.sleep(0.05)
 
     subprocess.Popen([sys.executable, script])
 

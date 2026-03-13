@@ -1,4 +1,5 @@
 import { useState } from "react";
+import "../dashboard.css";
 
 import {
   generateKeyPair,
@@ -21,7 +22,7 @@ import axios from "axios";
 
 const API = "http://127.0.0.1:8000";
 
-export default function UserAuthPage(){
+export default function UserAuthPage() {
 
   const [username,setUsername] = useState("");
   const [password,setPassword] = useState("");
@@ -36,7 +37,6 @@ export default function UserAuthPage(){
   // 🔁 AUTO TOKEN ROTATION
   useAutoRotate(token,privateKey,setToken);
 
-
   // =========================
   // REGISTER USER
   // =========================
@@ -50,18 +50,17 @@ export default function UserAuthPage(){
         password
       });
 
-      setStatus("User registered successfully");
+      setStatus("✅ User registered successfully");
 
     }
     catch(err){
 
       console.error(err);
-      setStatus("Registration failed");
+      setStatus("❌ Registration failed");
 
     }
 
   }
-
 
   // =========================
   // LOGIN + WEBCRYPTO FLOW
@@ -71,7 +70,7 @@ export default function UserAuthPage(){
 
     try{
 
-      setStatus("Logging in...");
+      setStatus("🔐 Logging in...");
 
       await axios.post(`${API}/login`,{
         username,
@@ -82,25 +81,28 @@ export default function UserAuthPage(){
       // GENERATE DEVICE KEYS
       // --------------------------
 
-      setStatus("Generating device keys...");
+      setStatus("🔑 Generating device keys...");
 
       const keyPair = await generateKeyPair();
 
       setPrivateKey(keyPair.privateKey);
+
       sessionStorage.setItem(
-  "privateKey",
-  JSON.stringify(await crypto.subtle.exportKey("jwk", keyPair.privateKey))
-);
+        "privateKey",
+        JSON.stringify(
+          await crypto.subtle.exportKey("jwk", keyPair.privateKey)
+        )
+      );
+
       const publicKeyPem = await exportPublicKey(
         keyPair.publicKey
       );
-
 
       // --------------------------
       // REGISTER DEVICE
       // --------------------------
 
-      setStatus("Registering device...");
+      setStatus("📱 Registering device...");
 
       await registerDevice(
         username,
@@ -108,12 +110,11 @@ export default function UserAuthPage(){
         publicKeyPem
       );
 
-
       // --------------------------
       // REQUEST CHALLENGE
       // --------------------------
 
-      setStatus("Requesting challenge...");
+      setStatus("📨 Requesting challenge...");
 
       const challengeRes = await requestChallenge(
         username,
@@ -128,9 +129,7 @@ export default function UserAuthPage(){
         throw new Error("Challenge not received from server");
       }
 
-      // store nonce for dashboard
       localStorage.setItem("challenge_nonce",challenge);
-
 
       // --------------------------
       // SIGN CHALLENGE
@@ -141,28 +140,25 @@ export default function UserAuthPage(){
         c => c.charCodeAt(0)
       );
 
-      setStatus("Signing challenge...");
+      setStatus("✍️ Signing challenge...");
 
       const signature = await signRawBytes(
         keyPair.privateKey,
         rawBytes
       );
 
-      // store signature for dashboard
-      // localStorage.setItem("signature_output",signature);
       localStorage.setItem(
-  "signature_output",
-  typeof signature === "string"
-    ? signature
-    : btoa(String.fromCharCode(...new Uint8Array(signature)))
-);
-
+        "signature_output",
+        typeof signature === "string"
+          ? signature
+          : btoa(String.fromCharCode(...new Uint8Array(signature)))
+      );
 
       // --------------------------
       // VERIFY CHALLENGE
       // --------------------------
 
-      setStatus("Verifying challenge...");
+      setStatus("✅ Verifying challenge...");
 
       await verifyChallenge(
         username,
@@ -170,12 +166,11 @@ export default function UserAuthPage(){
         signature
       );
 
-
       // --------------------------
       // ISSUE TOKEN
       // --------------------------
 
-      setStatus("Issuing token...");
+      setStatus("🎟 Issuing token...");
 
       const tokenRes = await issueToken(
         username,
@@ -187,31 +182,29 @@ export default function UserAuthPage(){
         tokenRes.access_token;
 
       setToken(newToken);
-      localStorage.setItem("access_token", newToken);
 
-// store token for dashboard inspector
-localStorage.setItem("access_token",newToken);
-localStorage.setItem("user",username);
+      localStorage.setItem("access_token",newToken);
+      localStorage.setItem("user",username);
 
-setStatus("Login successful");
+      setStatus("✅ Login successful");
 
-// 🔴 REDIRECT AFTER AUTH
-if(username === "admin"){
-  window.location.href="/dashboard";
-}else{
-  window.location.href="/welcome";
-}
+      // 🔴 REDIRECT AFTER AUTH
+      if(username === "admin"){
+        window.location.href="/dashboard";
+      }else{
+        window.location.href="/welcome";
+      }
+
     }
     catch(err){
 
       console.error(err);
 
-      setStatus("Authentication failed");
+      setStatus("❌ Authentication failed");
 
     }
 
   }
-
 
   // =========================
   // ACCESS PROTECTED API
@@ -222,11 +215,8 @@ if(username === "admin"){
     try{
 
       if(!token){
-
-        setStatus("Token missing");
-
+        setStatus("⚠ Token missing");
         return;
-
       }
 
       const payload = JSON.parse(
@@ -251,63 +241,81 @@ if(username === "admin"){
     catch(err){
 
       console.error(err);
-
-      setStatus("Protected access failed");
+      setStatus("❌ Protected access failed");
 
     }
 
   }
 
-
   // =========================
   // UI
   // =========================
 
-  return(
+  return (
 
-    <div style={{
-      padding:"40px",
-      fontFamily:"monospace"
-    }}>
+    <div className="auth-container">
 
-      <h2>Secure Gateway Login</h2>
+      <div className="auth-card">
 
-      <input
-        placeholder="username"
-        value={username}
-        onChange={(e)=>setUsername(e.target.value)}
-      />
+        <h1 className="auth-title">
+  🛡 Cryptographically Secured Access Token System for Zero‑Day Attack Prevention
+</h1>
 
-      <br/><br/>
+        <p className="auth-subtitle">
+          SOC Authentication Portal
+        </p>
 
-      <input
-        type="password"
-        placeholder="password"
-        value={password}
-        onChange={(e)=>setPassword(e.target.value)}
-      />
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={(e)=>setUsername(e.target.value)}
+          className="auth-input"
+        />
 
-      <br/><br/>
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e)=>setPassword(e.target.value)}
+          className="auth-input"
+        />
 
-      <button onClick={registerUser}>
-        Register
-      </button>
+        <div className="auth-buttons">
 
-      <br/><br/>
+          <button
+            onClick={registerUser}
+            className="btn-secondary"
+          >
+            Register
+          </button>
 
-      <button onClick={startAuth}>
-        Login
-      </button>
+          <button
+            onClick={startAuth}
+            className="btn-primary"
+          >
+            Login
+          </button>
 
-      <br/><br/>
+        </div>
 
-      <button onClick={accessAPI}>
-        Access Protected
-      </button>
+        <button
+          onClick={accessAPI}
+          className="btn-access"
+        >
+          Access Protected
+        </button>
 
-      <br/><br/>
+        <div className="status-box">
 
-      <p>Status: {status}</p>
+          <span className="status-label">
+            Status:
+          </span>
+
+          <p>{status}</p>
+
+        </div>
+
+      </div>
 
     </div>
 
