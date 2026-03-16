@@ -17,8 +17,9 @@ AES_LOG_KEYS = os.getenv("AES_LOG_KEYS")
 AES_LOG_ACTIVE = os.getenv("AES_LOG_ACTIVE")
 
 
-def get_aes_key():
+# ================= AES KEY =================
 
+def get_aes_key():
     keys = {}
 
     for item in AES_LOG_KEYS.split(","):
@@ -27,6 +28,8 @@ def get_aes_key():
 
     return keys[AES_LOG_ACTIVE]
 
+
+# ================= MAIN FUNCTION =================
 
 def decrypt_logs():
 
@@ -40,7 +43,15 @@ def decrypt_logs():
     tamper_detected = False
     total_logs = 0
 
-    logs = collection.find().sort("created_at", 1)
+    # 🔹 Fetch latest 500 logs
+    logs = list(
+        collection.find()
+        .sort("created_at", -1)
+        .limit(500)
+    )
+
+    # 🔹 Reverse to restore chronological order for hash chain
+    logs.reverse()
 
     for idx, record in enumerate(logs, start=1):
 
@@ -84,6 +95,8 @@ def decrypt_logs():
     print("Tampering detected:", tamper_detected)
     print("==============================")
 
+
+# ================= RUN =================
 
 if __name__ == "__main__":
     decrypt_logs()
